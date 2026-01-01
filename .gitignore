@@ -6,3 +6,4 @@ tdse.egg-info/
 test/
 dist/
 *.pyc
+.vscode/
