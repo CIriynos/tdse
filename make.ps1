@@ -1,1 +1,0 @@
-g++ -O3 -fPIC -shared interface.cpp -o interface.dll

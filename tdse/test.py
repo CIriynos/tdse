@@ -1,34 +1,3 @@
-# How to Build
-## 1. Build C++ Library
-C++ Compilation Environment: GCC on Linux.
-Check [MinGW](https://www.mingw-w64.org/) for Windows users.
-Build from Linux: 
-```shell
-g++ -O3 -fPIC -shared .\src\interface.cpp -o .\tdse\interface.so
-```
-Build from Windows:
-
-```shell
-g++ -O3 -fPIC -shared .\src\interface.cpp -o .\tdse\interface.dll
-```
-The output files (`.dll` in Windows or `.so` in Linux) are collected in `.\tdse`.
-
-## 2. Build Python Package (.whl)
-Note: It is recommended to use virtual python environment (`venv`) for building and installing the package.
-```shell
-pip install build
-python -m build --wheel
-pip install .\dist\tdse-1.0.0-py3-none-any.whl
-```
-
-## 3. Test
-It is simple to import the TDSE package in another directory
-```python
-import tdse
-```
-
-Here is a template for running TDSE
-```python
 # -*- coding: utf-8 -*-
 import numpy as np
 import matplotlib.pyplot as plt
@@ -74,4 +43,3 @@ plt.yscale('log')
 plt.ylim(1e-15, 1e-4)
 plt.yticks([1e-14, 1e-12, 1e-10, 1e-8, 1e-6, 1e-4])
 plt.show()
-```
