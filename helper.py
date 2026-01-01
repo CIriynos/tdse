@@ -2,10 +2,15 @@
 import os
 import numpy as np
 from ctypes import *
+from ctypes import CDLL
 import matplotlib.pyplot as plt
 import sys
 
-lib = cdll.LoadLibrary("./interface.so")
+if os.name == "nt":
+    lib = CDLL("./interface.dll", winmode=0)
+else:
+    lib = cdll.LoadLibrary("./interface.so")
+
 lib.create_physical_world_1d.restype = c_void_p
 lib.create_runtime_buffer_1d.restype = c_void_p
 lib.get_ground_state_1d.restype = c_void_p
