@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import matplotlib.pyplot as plt
-from tdse.helper import *
+from tdse import *
 
 # Grid
 Nx = 3600
