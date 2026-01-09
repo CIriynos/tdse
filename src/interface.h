@@ -20,11 +20,15 @@ extern "C"
 
     DLL_EXPORT void * create_runtime_buffer_1d(void * world_p, double delta_t, double delta_t_imag);
 
-    DLL_EXPORT void * get_ground_state_1d(void * wd_p, void * buffer_p, int time_steps);
+    DLL_EXPORT void * get_ground_state_1d(void * buffer_p, int time_steps);
 
     DLL_EXPORT double get_energy_1d(void * buffer_p, void * wavefunc);
 
-    DLL_EXPORT double * get_norm_1d(void * buffer_p, void * wavefunc);
+    DLL_EXPORT double get_pos_expect_1d(void * wd_p, void * wavefunc);
+
+    DLL_EXPORT double get_accel_expect_1d(void * wd_p, void * wavefunc);
+
+    DLL_EXPORT double * get_norm_1d(void * wd_p, void * wavefunc);
 
     DLL_EXPORT void tdse_laser_fd1d_onestep(void * buffer_p, void * wavefunc, double At);
 

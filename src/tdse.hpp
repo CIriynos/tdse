@@ -106,6 +106,8 @@ public:
     double delta_t;
     double imag_delta_t;
 
+    PhysicalWorld1D world;
+
     // basic matrices in TDSE solver
     PentaDiagonalMatrix D2;             // Second derivative matrix
     PentaDiagonalMatrix D1;             // First derivative matrix
@@ -125,10 +127,11 @@ public:
      * @param config Configuration of TDSE.
      * @param world Physical world parameters
      */
-    RuntimeBuffer1D(PhysicalWorld1D& world, double delta_t, double imag_delta_t)
+    RuntimeBuffer1D(const PhysicalWorld1D& world, double delta_t, double imag_delta_t)
         : Nx(world.xgrid.get_number()), 
           delta_x(world.xgrid.get_delta()),
           delta_t(delta_t), imag_delta_t(imag_delta_t),
+          world(world),
           D2(world.xgrid.get_number(), -1, 16, -30, 16, -1),
           D1(world.xgrid.get_number(), 1, -8, 0, 8, -1),
           I(world.xgrid.get_number(), 0, 0, 1, 0, 0),
@@ -206,12 +209,12 @@ inline void tdse_fd1d_mainloop(RuntimeBuffer1D& buffer, std::vector<cplx>& wavef
  * @param wavefunc Current wavefunction
  * @return Norm of the wavefunction
  */
-inline cplx get_norm_1d(const std::vector<cplx>& wavefunc) {
+inline cplx get_norm_1d(const PhysicalWorld1D& world, const std::vector<cplx>& wavefunc) {
     cplx norm = cplx(0.0, 0.0);
     for (const auto& val : wavefunc) {
         norm += std::conj(val) * val;
     }
-    return norm;
+    return norm * world.xgrid.delta;
 }
 
 /**
@@ -227,7 +230,24 @@ inline cplx get_energy_1d(const RuntimeBuffer1D& buffer, const std::vector<cplx>
     for(int i = 0; i < buffer.Nx; ++i) {
         energy += std::conj(wavefunc[i]) * H_psi[i];
     }
-    return energy;
+    return energy * buffer.delta_x;
+}
+
+inline cplx get_pos_expect_1d(const PhysicalWorld1D& world, const std::vector<cplx>& wavefunc) {
+    cplx pos_expect = cplx(0.0, 0.0);
+    for(int i = 0; i < world.xgrid.N; ++i) {
+        pos_expect += std::conj(wavefunc[i]) * wavefunc[i] * world.xgrid.get_pos(i);
+    }
+    return pos_expect * world.xgrid.delta;
+}
+
+inline cplx get_accel_expect_1d(const PhysicalWorld1D& world, const std::vector<cplx>& wavefunc) {
+    cplx accel_expect = cplx(0.0, 0.0);
+    auto dU = get_diff_data_2o(world.potential_data, world.xgrid.delta);
+    for(int i = 0; i < world.xgrid.N; ++i) {
+        accel_expect += std::conj(wavefunc[i]) * wavefunc[i] * -dU[i];
+    }
+    return accel_expect * world.xgrid.delta;
 }
 
 /**
@@ -246,7 +266,7 @@ inline void imaginary_time_propagation_1d(RuntimeBuffer1D& buffer, std::vector<c
         // logging
         if (step % 100 == 0) {
             auto energy = get_energy_1d(buffer, wavefunc);
-            auto norm = get_norm_1d(wavefunc);
+            auto norm = get_norm_1d(buffer.world, wavefunc);
             std::cout << "ITP Step " << step << ": Energy = " << energy << ", Norm = " << norm << std::endl;
         }
 
@@ -254,7 +274,7 @@ inline void imaginary_time_propagation_1d(RuntimeBuffer1D& buffer, std::vector<c
         solve_linear_system(buffer.temp_matrices[0], temp_vec2, buffer.A_neg_itp, temp_vec1, wavefunc); // Solve LHS: A_neg_itp * wavefunc_new = temp_vec1
 
         // Normalize wavefunction
-        cplx norm = get_norm_1d(wavefunc);
+        cplx norm = get_norm_1d(buffer.world, wavefunc);
         for(auto& val : wavefunc) { 
             val /= std::sqrt(norm); 
         }

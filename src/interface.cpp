@@ -35,10 +35,9 @@ extern "C"
     }
 
     DLL_EXPORT 
-    void * get_ground_state_1d(void * wd_p, void * buffer_p, int time_steps)
+    void * get_ground_state_1d(void * buffer_p, int time_steps)
     {
-        PhysicalWorld1D * world_p = (PhysicalWorld1D *) wd_p;
-        std::vector<cplx> wavefunc = gauss_package_1d(world_p->xgrid, 1.0, 1.0, 0.0);
+        std::vector<cplx> wavefunc = gauss_package_1d(((RuntimeBuffer1D*)buffer_p)->world.xgrid, 1.0, 1.0, 0.0);
         imaginary_time_propagation_1d(*(RuntimeBuffer1D*)buffer_p, wavefunc, time_steps);
         std::vector<cplx> * result = new std::vector<cplx>(wavefunc);
         return (void *) result;
@@ -49,6 +48,20 @@ extern "C"
     {
         cplx energy = get_energy_1d(*(RuntimeBuffer1D*)buffer_p, *(std::vector<cplx>*) wavefunc);
         return (double)energy.real();
+    }
+
+    DLL_EXPORT 
+    double get_pos_expect_1d(void * world_p, void * wavefunc)
+    {
+        cplx pos_expect = get_pos_expect_1d(*(PhysicalWorld1D*)world_p, *(std::vector<cplx>*) wavefunc);
+        return (double)pos_expect.real();
+    }
+
+    DLL_EXPORT 
+    double get_accel_expect_1d(void * world_p, void * wavefunc)
+    {
+        cplx accel_expect = get_accel_expect_1d(*(PhysicalWorld1D*)world_p, *(std::vector<cplx>*) wavefunc);
+        return (double)accel_expect.real();
     }
 
     DLL_EXPORT
@@ -66,9 +79,9 @@ extern "C"
     }
 
     DLL_EXPORT
-    double * get_norm_1d(void * buffer_p, void * wavefunc)
+    double * get_norm_1d(void * wd_p, void * wavefunc)
     {
-        return convert_cplx_to_array2(get_norm_1d(*(std::vector<cplx>*) wavefunc));
+        return convert_cplx_to_array2(get_norm_1d(*(PhysicalWorld1D*) wd_p, *(std::vector<cplx>*) wavefunc));
     }
 
     DLL_EXPORT 

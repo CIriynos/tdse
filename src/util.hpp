@@ -210,4 +210,42 @@ inline void solve_linear_system(PentaDiagonalMatrix& A_buffer, std::vector<cplx>
     }
 }
 
+/**
+ * @brief Get the central difference value for a given array at a certain index. "4o" represents four-order difference.
+ * 
+ * @param X input array
+ * @param id the index of the array, indicating the center place of the difference
+ * @param delta the differential step size
+ */
+template <typename T>
+inline T get_diff_4o(const std::vector<T>& X, int id, double delta) {
+    T value = (X[id - 2] - 8 * X[id - 1] + 8 * X[id + 1] - X[id + 2]) / (12 * delta);
+    return value;
+}
+
+/**
+ * @brief Get the central difference value (2-order) for a given array at a certain index. "2o" represents two-order difference.
+ * 
+ * @param X input array
+ * @param id the index of the array, indicating the center place of the difference
+ * @param delta the differential step size
+ */
+template <typename T>
+inline T get_diff_2o(const std::vector<T>& X, int id, double delta) {
+    T value = -(X[id - 1] - X[id + 1]) / (2 * delta);
+    return value;
+}
+
+template <typename T>
+inline std::vector<T> get_diff_data_2o(const std::vector<T>& X, double delta) {
+    std::vector<T> res(X);
+    int len = X.size();
+    res[0] = (X[1] - X[0]) / delta;
+    res[len - 1] = (X[len - 1] - X[len - 2]) / delta;
+    for(int i = 1; i < len - 1; ++i) {
+        res[i] = get_diff_2o(X, i, delta);
+    }
+    return res;
+}
+
 #endif // __UTIL_HPP__
