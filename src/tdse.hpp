@@ -90,7 +90,6 @@ struct PhysicalWorld1D {
         absorption_potential_data(xgrid.get_number())
     {
     }
-    
 
 };
 

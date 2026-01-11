@@ -3,6 +3,7 @@
 
 #include "tdse.hpp"
 
+
 #ifdef _MSC_VER
     #define DLL_EXPORT __declspec( dllexport ) 
 #else
@@ -35,6 +36,8 @@ extern "C"
     DLL_EXPORT double * get_wave_value_1d(void * wd_p, void * wavefunc, double x_pos);
 
     DLL_EXPORT double * get_wave_1diff_value_1d(void * wd_p, void * wavefunc, double x_pos);
+
+    DLL_EXPORT void get_wave_value_list_1d(void * wd_p, void * wavefunc, double * wave_real, double * wave_imag);
 }
 
 

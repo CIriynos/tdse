@@ -1,4 +1,4 @@
-#include "interface.h"
+#include "interface.hpp"
 
 extern "C"
 {
@@ -98,5 +98,16 @@ extern "C"
         cplx num1 = (*(std::vector<cplx>*)wavefunc)[x_id - 1];
         cplx num2 = (*(std::vector<cplx>*)wavefunc)[x_id + 1];
         return convert_cplx_to_array2(-(num1 - num2) / (2.0 * ((PhysicalWorld1D*)wd_p)->xgrid.get_delta()));
+    }
+
+    DLL_EXPORT
+    void get_wave_value_list_1d(void * wd_p, void * wavefunc, double * wave_real, double * wave_imag)
+    {
+        int Nx = ((PhysicalWorld1D*)wd_p)->xgrid.N;
+        std::vector<cplx>& wave = *(std::vector<cplx>*) wavefunc;
+        for(int i = 0; i < Nx; i++) {
+            wave_real[i] = wave[i].real();
+            wave_imag[i] = wave[i].imag();
+        }
     }
 }

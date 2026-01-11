@@ -10,7 +10,7 @@ from scipy.signal.windows import chebwin
 
 if os.name == "nt":
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    lib = CDLL(current_dir + "/interface.dll", winmode=0)
+    lib = CDLL(current_dir + r"\interface.dll")
 else:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     lib = cdll.LoadLibrary(current_dir + "/interface.so")
@@ -79,6 +79,19 @@ def get_accel_expect_1d(world, wavefunc):
 def get_wave_value_1d(world, wavefunc, x_pos):
     res = lib.get_wave_value_1d(c_void_p(world), c_void_p(wavefunc), c_double(x_pos))
     return res[0] + 1j * res[1]
+
+def get_wave_value_list_1d(world, wavefunc, Nx):
+    c_array_t = c_double * Nx
+    wave_real = c_array_t()
+    wave_imag = c_array_t()
+    
+    lib.get_wave_value_list_1d(c_void_p(world), c_void_p(wavefunc), wave_real, wave_imag)
+    
+    value_list = np.zeros(Nx, dtype=complex)
+    for i in range(0, Nx):
+        value_list[i] = wave_real[i] + wave_imag[i] * (1.0j)
+
+    return value_list
 
 def tdse_laser_fd1d_onestep(buffer, wavefunc, At):
     lib.tdse_laser_fd1d_onestep(c_void_p(buffer), c_void_p(wavefunc), c_double(At))
@@ -330,6 +343,7 @@ def get_hg_spectrum_1d(ts, accel_data, pos_data, max_k):
     max_id = math.floor(max_k / delta_k)
     return hg1[0: max_id], hg2[0: max_id], ks[0: max_id]
 
+####################################
 
 def display_time_SI(t):
     res = t * 0.02418884326585
@@ -347,6 +361,7 @@ def display_electric_field_SI(E):
     print(f"{res:.3f} kV/cm")
     return res
 
+####################################
 
 import re
 
@@ -367,3 +382,5 @@ def transform_code_string(input_str):
 def execute_code(script_name, global_vars_dict):
     code = open(script_name, "r", encoding="utf-8").read()
     exec(transform_code_string(code), global_vars_dict)
+
+####################################

@@ -21,12 +21,12 @@ Windows: Check [MinGW](https://www.mingw-w64.org/) (A native Windows port of the
 
 Build from Linux: 
 ```shell
-g++ -O3 -fPIC -shared .\src\interface.cpp -o .\tdse\interface.so
+g++ -O3 -fPIC -shared -static .\src\interface.cpp -o .\tdse\interface.so
 ```
 Build from Windows:
 
 ```shell
-g++ -O3 -fPIC -shared .\src\interface.cpp -o .\tdse\interface.dll
+g++ -O3 -fPIC -shared -static .\src\interface.cpp -o .\tdse\interface.dll
 ```
 The output files (`.dll` in Windows or `.so` in Linux) are collected in `.\tdse`.
 
@@ -47,6 +47,8 @@ It is simple to import the TDSE package in any other python script in different 
 ```python
 import tdse
 ```
+> [!WARNING] FileNotFoundError: Could not find module '...\interface.dll' ...
+> We recommand you build the library with option `-static`, as shown in the instructions before. If not, you may encounter such error. This is because python (>3.8) sometimes fail to find the path for "libstdc++-6.so(.lib)", especially for Windows MinGW environment. System environment variables in `PATH` will not be loaded by python. In other word, you need to manually inform the python interpreter of the locations of those external DLLs (https://docs.python.org/3/library/os.html#os.add_dll_directory). By statically linking these libraries or dependences into your application, you can circumvent this issue.
 
 # Getting Start
 Here are the basic concepts:
