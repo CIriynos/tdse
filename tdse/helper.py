@@ -7,6 +7,7 @@ from ctypes import CDLL
 import matplotlib.pyplot as plt
 import sys
 from scipy.signal.windows import chebwin
+import h5py
 
 if os.name == "nt":
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -26,13 +27,17 @@ lib.get_accel_expect_1d.restype = c_double
 lib.get_wave_value_1d.restype = POINTER(c_double)
 lib.get_wave_1diff_value_1d.restype = POINTER(c_double)
 
+
+def create_grid_data(N, delta, shift):
+    return np.array([shift + delta * i for i in range(0, N)])
+
 def create_physical_world_1d(
     Nx, delta_x, shift_x,   # x-grid
     potential,
     absorption_potential
     ):
 
-    xs = [shift_x + delta_x * i for i in range(0, Nx)]
+    xs = create_grid_data(Nx, delta_x, shift_x)
     Vx = [potential(x) for x in xs]
     Vx_absorb_real = [np.real(absorption_potential(x)) for x in xs]
     Vx_absorb_imag = [np.imag(absorption_potential(x)) for x in xs]
@@ -383,4 +388,452 @@ def execute_code(script_name, global_vars_dict):
     code = open(script_name, "r", encoding="utf-8").read()
     exec(transform_code_string(code), global_vars_dict)
 
+
+###################################
+import numpy as np
+import h5py
+import os
+from pathlib import Path
+
+def save_complex_arrays_to_hdf5(arrays, filename, compression=None):
+    
+    # 确保目录存在
+    file_path = Path(filename)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # 定义复数的复合数据类型
+    complex_dtype = np.dtype([('real', np.float64), ('imag', np.float64)])
+    
+    # 写入HDF5文件
+    with h5py.File(filename, 'w') as f:
+        # 存储数组数量作为元数据
+        f.attrs['num_arrays'] = len(arrays)
+        
+        for i, arr in enumerate(arrays):
+            if not np.issubdtype(arr.dtype, np.complexfloating):
+                raise ValueError(f"数组 {i} 不是复数类型")
+            
+            # 转换为结构化数组
+            structured_arr = np.empty(arr.shape, dtype=complex_dtype)
+            structured_arr['real'] = arr.real
+            structured_arr['imag'] = arr.imag
+            
+            # 创建数据集
+            dataset_name = f'array_{i}'
+            if compression:
+                f.create_dataset(dataset_name, data=structured_arr, 
+                               compression=compression)
+            else:
+                f.create_dataset(dataset_name, data=structured_arr)
+
+
+def load_complex_arrays_from_hdf5(filename):
+    if not os.path.exists(filename):
+        raise FileNotFoundError(f"HDF5文件不存在: {filename}")
+    
+    loaded_arrays = []
+    
+    with h5py.File(filename, 'r') as f:
+        # 获取数组数量（如果有存储的话）
+        if 'num_arrays' in f.attrs:
+            num_arrays = f.attrs['num_arrays']
+            # 按顺序读取
+            for i in range(num_arrays):
+                dataset_name = f'array_{i}'
+                if dataset_name not in f:
+                    raise ValueError(f"数据集 {dataset_name} 不存在")
+                
+                structured = f[dataset_name][()]
+                complex_arr = structured['real'] + 1j * structured['imag']
+                loaded_arrays.append(complex_arr)
+        else:
+            # 如果没有num_arrays属性，按字典序读取所有array_*数据集
+            array_keys = [key for key in f.keys() if key.startswith('array_')]
+            # 按数字顺序排序
+            array_keys.sort(key=lambda x: int(x.split('_')[1]))
+            
+            for key in array_keys:
+                structured = f[key][()]
+                complex_arr = structured['real'] + 1j * structured['imag']
+                loaded_arrays.append(complex_arr)
+    
+    return loaded_arrays
+
+
 ####################################
+# TDSE
+from scipy import sparse
+import scipy.sparse.linalg as spla
+from scipy.linalg import solve_banded
+
+def get_time(f):
+    def inner(*arg,**kwarg):
+        s_time = time.time()
+        res = f(*arg,**kwarg)
+        e_time = time.time()
+        print('耗时：{}秒'.format(e_time - s_time))
+        return res
+    return inner
+
+def create_sparse_dia_mat(N, diag_num_list):
+    band_width = len(diag_num_list)
+    shift = band_width // 2
+    identifier_list = [i for i in range(0 - shift, band_width - shift)]
+    data = [np.ones(N - abs(i - shift)) * diag_num_list[i] for i in range(0, band_width)]
+    return sparse.diags(data, identifier_list, format='dia', dtype="complex")
+
+def create_band(A_dia):
+    N = A_dia.shape[0]
+    data = A_dia.data
+    offsets = A_dia.offsets
+    l = -offsets.min()
+    u = offsets.max()
+
+    ab = np.zeros((l + u + 1, N), dtype="complex")
+    for i, offset in enumerate(offsets):
+        row = u - offset
+        ab[row] = data[i]
+    return {"ab": ab, "l": l, "u": u}
+
+def py_thomas_solve(A, b):
+    solve_banded((A["l"], A["u"]), A["ab"], b, overwrite_b=True)
+
+def py_create_buffer_1d(Nx, delta_x, delta_t, delta_t_itp, shift_x,
+    Vx, Vx_absorb, accuracy=4, boundary_condition="reflect"):
+    
+    xgrid = create_grid_data(Nx, delta_x, shift_x)
+    I = create_sparse_dia_mat(Nx, [1])
+    V = create_sparse_dia_mat(Nx, [Vx(xgrid)])
+    V_absorb = create_sparse_dia_mat(Nx, [Vx(xgrid) + Vx_absorb(xgrid)])
+
+    if accuracy == 4:
+        D2 = create_sparse_dia_mat(Nx, [-1, 16, -30, 16, -1]) * (1.0 / (12.0 * delta_x * delta_x))
+        D1 = create_sparse_dia_mat(Nx, [1, -8, 0, 8, -1]) * (1.0 / (12.0 * delta_x))
+        
+        M = I   # meaningless
+        N = I   # meaningless
+        A_pos = I + (0.25 * 1j * delta_t) * D2 + (-0.5 * 1j * delta_t) * V_absorb
+        A_neg = I + (-0.25 * 1j * delta_t) * D2 + (0.5 * 1j * delta_t) * V_absorb
+        A_pos_itp = I + (0.25 * delta_t_itp) * D2 + (-0.5 * delta_t_itp) * V
+        A_neg_itp = I + (-0.25 * delta_t_itp) * D2 + (0.5 * delta_t_itp) * V
+
+        H = -0.5 * D2 + V
+        H_absorb = -0.5 * D2 + V_absorb
+
+        A_neg_ab = create_band(A_neg.todia())
+        A_pos_csr = A_pos.tocsr()
+        A_neg_itp_ab = create_band(A_neg_itp.todia())
+        A_pos_itp_csr = A_pos_itp.tocsr()
+
+    elif accuracy == 2:
+        if boundary_condition == "reflect":
+            D2 = create_sparse_dia_mat(Nx, [1, -2, 1]) * (1.0 / (delta_x * delta_x))
+            D1 = create_sparse_dia_mat(Nx, [-1, 0, 1]) * (1.0 / (2 * delta_x))        
+
+            M = I + (delta_x * delta_x / 12) * D2
+            N = I + (delta_x * delta_x / 6) * D2
+            A_pos = M - (D2 * (-0.5) + M * V_absorb) * (0.5j * delta_t)
+            A_neg = M + (D2 * (-0.5) + M * V_absorb) * (0.5j * delta_t)
+            A_pos_itp = M - (D2 * (-0.5) + M * V) * (0.5j * (-1j * delta_t_itp))
+            A_neg_itp = M + (D2 * (-0.5) + M * V) * (0.5j * (-1j * delta_t_itp))
+
+            A_neg_itp_ab = create_band(A_neg_itp.todia())
+            A_pos_itp_csr = A_pos_itp.tocsr()
+            A_neg_ab = create_band(A_neg.todia())
+            A_pos_csr = A_pos.tocsr()
+        
+        elif boundary_condition == "period":
+            D2 = create_sparse_dia_mat(Nx, [1, -2, 1]).tocsr() * (1.0 / (delta_x * delta_x))
+            D1 = create_sparse_dia_mat(Nx, [-1, 0, 1]).tocsr() * (1.0 / (2 * delta_x))
+            D2[0, Nx - 1] = (1.0 / (delta_x * delta_x))
+            D2[Nx - 1, 0] = (1.0 / (delta_x * delta_x))
+            D1[0, Nx - 1] = (-1.0 / (2 * delta_x))
+            D1[Nx - 1, 0] = (1.0 / (2 * delta_x))
+
+            M = I + (delta_x * delta_x / 12) * D2
+            N = I + (delta_x * delta_x / 6) * D2
+            A_pos = M - (D2 * (-0.5) + M * V_absorb) * (0.5j * delta_t)
+            A_neg = M + (D2 * (-0.5) + M * V_absorb) * (0.5j * delta_t)
+            A_pos_itp = M - (D2 * (-0.5) + M * V) * (0.5j * (-1j * delta_t_itp))
+            A_neg_itp = M + (D2 * (-0.5) + M * V) * (0.5j * (-1j * delta_t_itp))
+            P_pos_itp = N - D1 * (0.5 * delta_t_itp)
+            P_neg_itp = N + D1 * (0.5 * delta_t_itp)
+
+            # manually remove those elements
+            A_neg_itp_tmp, a, b = prepare_for_rank1_update(A_neg_itp)
+            A_neg_tmp, a, b = prepare_for_rank1_update(A_neg)
+            P_neg_itp_tmp, _, _ = prepare_for_rank1_update(P_neg_itp)
+
+            A_neg_itp_ab = create_band(A_neg_itp_tmp.todia())   # still keep origin
+            A_neg_ab = create_band(A_neg_tmp.todia())   # still keep origin
+            P_neg_itp_ab = create_band(P_neg_itp_tmp.todia())
+            A_pos_itp_csr = A_pos_itp.tocsr() 
+            A_pos_csr = A_pos.tocsr()
+            P_pos_itp_csr = P_pos_itp.tocsr() 
+        
+        # meaningless in 2-order scenario
+        H = -0.5 * D2 + V
+        H_absorb = -0.5 * D2 + V_absorb
+
+    result = {
+        "Nx": Nx,
+        "delta_x": delta_x,
+        "delta_t": delta_t,
+        "delta_t_itp": delta_t_itp,
+        "shift_x": shift_x,
+        
+        "D2": D2,
+        "D1": D1,
+        "I": I,
+        "V": V,
+        "V_absorb": V_absorb,
+        "M": M,
+        "N": N,
+        "A_pos": A_pos,
+        "A_neg": A_neg,
+        "A_pos_itp": A_pos_itp,
+        "A_neg_itp": A_neg_itp,
+        "H": H,
+        "H_absorb": H_absorb,
+        "A_neg_ab": A_neg_ab,
+        "A_pos_csr": A_pos_csr,
+        "A_neg_itp_ab": A_neg_itp_ab,
+        "A_pos_itp_csr": A_pos_itp_csr,
+        "P_pos_itp": P_pos_itp,
+        "P_neg_itp": P_neg_itp,
+        "P_pos_itp_csr": P_pos_itp_csr,
+        "P_neg_itp_ab": P_neg_itp_ab,
+        
+        "accuracy": accuracy,
+        "boundary_condition": boundary_condition
+    }
+    return result
+
+def prepare_for_rank1_update(A):
+    N = A.shape[0]
+    A0 = A.copy()
+    a = A0[0, N - 1]
+    b = A0[N - 1, 0]
+    A0[0, N - 1] = 0
+    A0[N - 1, 0] = 0
+    A0[0, 0] -= np.sqrt(a * b)
+    A0[N - 1, N - 1] -= np.sqrt(a * b)
+    A0.eliminate_zeros()
+    return A0, a, b
+
+def py_thomas_solve_rank1_update(A0, wave, a, b):
+    N = A0["ab"].shape[1]
+    u = np.zeros(N, dtype=complex)
+    v = np.zeros(N, dtype=complex)
+    x0 = wave.copy()
+    py_thomas_solve(A0, x0)
+    
+    u[0] = np.sqrt(a)
+    u[N - 1] = np.sqrt(b)
+    v[0] = (np.sqrt(b)).conjugate()
+    v[N - 1] = (np.sqrt(a)).conjugate()
+    lam = u.copy()
+    py_thomas_solve(A0, lam)
+
+    x_prime = (u * np.vdot(v, x0)) / (np.vdot(v, lam) + 1)
+    py_thomas_solve(A0, x_prime)
+    x_final = x0 - x_prime
+    wave[:] = x_final
+
+
+gauss_pkg_f = lambda x, omega, k0, x0: (1.0 / np.pow(2 * np.pi, 0.25)) * np.exp(1j * k0 * x) * np.exp(-np.pow((x - x0) / (2 * omega), 2))
+
+
+def py_itp_1d(rt, steps=1000):
+    xgrid = create_grid_data(rt["Nx"], rt["delta_x"], rt["shift_x"])
+    wave = gauss_pkg_f(xgrid, omega=1.0, k0=1.0, x0=1.0)
+
+    for step in range(0, steps):
+        wave[:] = rt["A_pos_itp_csr"] @ wave
+        if rt["boundary_condition"] == "reflect":
+            py_thomas_solve(rt["A_neg_itp_ab"], wave)
+        elif rt["boundary_condition"] == "period":
+            a = rt["A_neg_itp"][0, rt["Nx"] - 1]
+            b = rt["A_neg_itp"][rt["Nx"] - 1, 0]
+            py_thomas_solve_rank1_update(rt["A_neg_itp_ab"], wave, a, b)
+
+        wave /= np.sqrt(np.vdot(wave, wave))
+    return wave
+
+
+def py_itp_free_1d(rt, steps=1000):
+    xgrid = create_grid_data(rt["Nx"], rt["delta_x"], rt["shift_x"])
+    wave = gauss_pkg_f(xgrid, omega=1.0, k0=1.0, x0=0.0)
+
+    for step in range(0, steps):
+        # wave[:] = rt["P_pos_itp_csr"] @ wave
+        # if rt["boundary_condition"] == "reflect":
+        #     py_thomas_solve(rt["P_neg_itp_ab"], wave)
+        # elif rt["boundary_condition"] == "period":
+        #     a = rt["P_neg_itp"][0, rt["Nx"] - 1]
+        #     b = rt["P_neg_itp"][rt["Nx"] - 1, 0]
+        #     py_thomas_solve_rank1_update(rt["P_neg_itp_ab"], wave, a, b)
+        # wave /= np.sqrt(np.vdot(wave, wave))
+
+        wave[:] = rt["A_pos_itp_csr"] @ wave
+        if rt["boundary_condition"] == "reflect":
+            py_thomas_solve(rt["A_neg_itp_ab"], wave)
+        elif rt["boundary_condition"] == "period":
+            a = rt["A_neg_itp"][0, rt["Nx"] - 1]
+            b = rt["A_neg_itp"][rt["Nx"] - 1, 0]
+            py_thomas_solve_rank1_update(rt["A_neg_itp_ab"], wave, a, b)
+        wave /= np.sqrt(np.vdot(wave, wave))
+
+    return wave
+
+
+def tdse_fd1d(rt, wave, steps=1000):
+    for step in range(0, steps):
+        # print(np.vdot(wave, wave))
+        wave[:] = rt["A_pos_csr"] @ wave
+        if rt["boundary_condition"] == "reflect":
+            py_thomas_solve(rt["A_neg_ab"], wave)
+        elif rt["boundary_condition"] == "period":
+            a = rt["A_neg"][0, rt["Nx"] - 1]
+            b = rt["A_neg"][rt["Nx"] - 1, 0]
+            py_thomas_solve_rank1_update(rt["A_neg_ab"], wave, a, b)
+    return wave
+
+
+def py_get_energy_1d(rt, wave):
+    if rt["accuracy"] == 4:
+        return np.real(np.vdot(wave, rt["H"] @ wave))
+    elif rt["accuracy"] == 2:
+        if rt["boundary_condition"] == "reflect":
+            M_ab = create_band(rt["M"].todia())
+            tmp1 = rt["D2"] @ wave
+            py_thomas_solve(M_ab, tmp1)
+            tmp2 = rt["V"] @ wave + (-0.5) * tmp1
+            return np.real(np.vdot(wave, tmp2))
+
+        elif rt["boundary_condition"] == "period":
+            M_0, a, b = prepare_for_rank1_update(rt["M"])
+            tmp1 = rt["D2"] @ wave
+            py_thomas_solve_rank1_update(create_band(M_0.todia()), tmp1, a, b)
+            tmp2 = rt["V"] @ wave + (-0.5) * tmp1
+            return np.real(np.vdot(wave, tmp2))
+
+
+def py_get_kinetic_momentum_1d(rt, wave):
+    if rt["accuracy"] == 4:
+        return np.real(np.vdot(wave, rt["D1"] @ wave) * (-1j))
+    elif rt["accuracy"] == 2:
+        if rt["boundary_condition"] == "reflect":
+            N_ab = create_band(rt["N"].todia())
+            tmp1 = rt["D1"] @ wave
+            py_thomas_solve(N_ab, tmp1)
+            return np.real(np.vdot(wave, tmp1) * (-1j))
+
+        elif rt["boundary_condition"] == "period":
+            N_0, a, b = prepare_for_rank1_update(rt["N"])
+            tmp1 = rt["D1"] @ wave
+            py_thomas_solve_rank1_update(create_band(N_0.todia()), tmp1, a, b)
+            return np.real(np.vdot(wave, tmp1) * (-1j))
+
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.fft import fft, ifft, fftfreq, fftshift
+
+
+def separate_momentum_components(psi_x, x, plot=False):
+    hbar=1.0
+
+    # 1. 基本参数设置
+    N = len(x)          # 网格点数
+    L = x[-1] - x[0]    # 空间总长度
+    dx = x[1] - x[0]    # 空间步长
+    
+    # 2. 验证均匀网格
+    if not np.allclose(np.diff(x), dx, atol=1e-10):
+        raise ValueError("位置网格必须是均匀的")
+    
+    # 3. FFT变换到动量空间
+    psi_k = fft(psi_x) * dx / np.sqrt(2 * np.pi * hbar)  # 保持L2范数
+    
+    # 4. 生成物理动量网格 (p = ħk)
+    # fftfreq返回的顺序: [0, 1, ..., N/2-1, -N/2, ..., -1] (N为偶数时)
+    k = fftfreq(N, d=dx) * 2 * np.pi  # 波数 (rad/m)
+    p = hbar * k                      # 物理动量
+    
+    # 5. 构建动量空间投影算符
+    # 处理k=0点: 严格属于非正动量 (θ(0)=0)
+    pos_mask = p > 0      # 正动量掩码 (p > 0)
+    neg_mask = p <= 0     # 负动量掩码 (p <= 0)
+    
+    # 6. 应用投影
+    psi_k_pos = np.zeros_like(psi_k)
+    psi_k_neg = np.zeros_like(psi_k)
+    psi_k_pos[pos_mask] = psi_k[pos_mask]
+    psi_k_neg[neg_mask] = psi_k[neg_mask]
+    
+    # 7. 逆FFT回位置空间 (恢复范数)
+    psi_pos = ifft(psi_k_pos) * np.sqrt(2 * np.pi * hbar) / dx
+    psi_neg = ifft(psi_k_neg) * np.sqrt(2 * np.pi * hbar) / dx
+    
+    # 8. 归一化校正 (可选但推荐)
+    # 保持分离后分量的相对范数
+    norm_total = np.sqrt(np.trapz(np.abs(psi_x)**2, x))
+    norm_pos = np.sqrt(np.trapz(np.abs(psi_pos)**2, x))
+    norm_neg = np.sqrt(np.trapz(np.abs(psi_neg)**2, x))
+    
+    if norm_pos > 1e-10:
+        psi_pos *= norm_total / norm_pos * np.sqrt(np.trapz(np.abs(psi_pos)**2, x)) / norm_total
+    if norm_neg > 1e-10:
+        psi_neg *= norm_total / norm_neg * np.sqrt(np.trapz(np.abs(psi_neg)**2, x)) / norm_total
+    
+    # 9. 验证 (可选)
+    if plot:
+        # 转换为物理单位的动量网格 (用于绘图)
+        p_plot = fftshift(p)
+        psi_k_plot = fftshift(np.abs(psi_k)**2)
+        psi_k_pos_plot = fftshift(np.abs(psi_k_pos)**2)
+        psi_k_neg_plot = fftshift(np.abs(psi_k_neg)**2)
+        
+        plt.figure(figsize=(12, 10))
+        
+        # 位置空间波函数
+        plt.subplot(3, 1, 1)
+        plt.plot(x, np.abs(psi_x)**2, 'k-', lw=2, label='Total |ψ|²')
+        plt.plot(x, np.abs(psi_pos)**2, 'b--', lw=1.5, label='Positive momentum')
+        plt.plot(x, np.abs(psi_neg)**2, 'r-.', lw=1.5, label='Negative momentum')
+        plt.title('Position Space Wavefunction')
+        plt.xlabel('Position (m)')
+        plt.ylabel('Probability Density')
+        plt.legend()
+        plt.grid(True)
+        
+        # 动量空间分布
+        plt.subplot(3, 1, 2)
+        plt.plot(p_plot, psi_k_plot, 'k-', lw=2, label='Total |ψ̃(p)|²')
+        plt.fill_between(p_plot, 0, psi_k_pos_plot, color='blue', alpha=0.3, label='Positive momentum')
+        plt.fill_between(p_plot, 0, psi_k_neg_plot, color='red', alpha=0.3, label='Negative momentum')
+        plt.axvline(0, color='gray', linestyle='--')
+        plt.title('Momentum Space Distribution')
+        plt.xlabel('Momentum (kg·m/s)')
+        plt.ylabel('Spectral Density')
+        plt.legend()
+        plt.grid(True)
+        
+        # 验证投影性质
+        plt.subplot(3, 1, 3)
+        recon = psi_pos + psi_neg
+        error = np.max(np.abs(recon - psi_x))
+        plt.plot(x, np.abs(recon - psi_x), 'g-', lw=2)
+        plt.title(f'Reconstruction Error (max|ψ_rec - ψ| = {error:.2e})')
+        plt.xlabel('Position (m)')
+        plt.ylabel('Absolute Error')
+        plt.yscale('log')
+        plt.grid(True)
+        
+        plt.tight_layout()
+        plt.show()
+    
+    psi_pos /= np.sqrt(np.vdot(psi_pos, psi_pos))
+    psi_neg /= np.sqrt(np.vdot(psi_neg, psi_neg))
+
+    return psi_pos, psi_neg, k, psi_k

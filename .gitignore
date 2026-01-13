@@ -7,3 +7,4 @@ test/
 dist/
 *.pyc
 .vscode/
+*.h5

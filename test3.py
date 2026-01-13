@@ -4,14 +4,14 @@ import matplotlib.pyplot as plt
 from tdse import *
 
 # Grid
-Nx =            EXPORT(3600 * 10, "Nx")
-delta_x =       EXPORT(0.2 / 10, "delta_x")
+Nx =            EXPORT(20000 * 2, "Nx")
+delta_x =       EXPORT(0.2 / 2, "delta_x")
 shift_x =       -(Nx * delta_x) / 2
 Lx =            Nx * delta_x
 
 # Time evolution
-delta_t =       EXPORT(0.05, "delta_t")
-imag_delta_t =  EXPORT(-0.1, "imag_delta_t")
+delta_t =       EXPORT(0.05 / 2, "delta_t")
+imag_delta_t =  EXPORT(0.1, "imag_delta_t")
 itp_steps =     EXPORT(1000, "itp_steps")
 
 # t-surf
@@ -26,48 +26,23 @@ laser = cos2_laser_pulse(delta_t=delta_t, E0=E0, omega0=omega0, nc=nc)
 # potential 
 a0 =            EXPORT(1.0, "a0")
 Vx =            EXPORT(lambda x: -1.0 / np.sqrt(x * x + a0), "Vx")
-Vx_absorb =     EXPORT(lambda x: 0.0, "Vx_absorb")
+Vx_absorb =     EXPORT(lambda x: -100j * pow((np.abs(x) - Xi) / (Lx / 2 - Xi), 8) * (np.abs(x) > Xi), "Vx_absorb")
 
 
-# enviroment
-world, xs = create_physical_world_1d(Nx, delta_x, shift_x, Vx, Vx_absorb)
-buffer = create_runtime_buffer_1d(world, delta_t, imag_delta_t)
+# Runtime Environment
+xgrid = create_grid_data(Nx, delta_x, shift_x)
+rt = py_create_buffer_1d(Nx, delta_x, delta_t, imag_delta_t, shift_x, \
+    Vx, Vx_absorb, accuracy=2, boundary_condition="period")
+wave = py_itp_1d(rt, itp_steps)
 
-# get ground states
-wave = get_ground_state_1d(buffer, itp_steps)
-init_energy = get_energy_1d(buffer, wave)
+psi_pos, psi_neg, k, psi_k = separate_momentum_components(wave, xgrid)
 
-wave_data = get_wave_value_list_1d(world, wave, Nx)
-# plt.plot(xs, np.real(wave_data))
-# plt.show()
-
-
-
-# # tdse-hg-tsurf
-# accel, pos, tsurf_res = tdse_fd1d_hg_tsurf(world, buffer, wave, light_field=laser, Xi=Xi)
-
-# # harmonic spectrum
-# n_cut_off_estim = math.floor((-init_energy + 3.17 * (E0 ** 2.0 / (4.0 * (omega0 ** 2.0)))) / omega0)
-# print(f"n_cut_off = {n_cut_off_estim}")
-# hg1, hg2, ks = get_hg_spectrum_1d(laser.get_ts(), accel, pos, max_k=(n_cut_off_estim + 20) * omega0)
-
-# plt.figure()
-# plt.plot(ks / omega0, hg1, label="accel")
-# # plt.plot(ks / laser.omega0, hg2, label="pos")
-# plt.xticks(range(1, (n_cut_off_estim + 20), 2))
-# plt.grid(True, alpha=0.2)
-# plt.yscale('log')
-# # plt.ylim(1e-15, 1e2)
-# plt.legend()
-# plt.show()
-
-# # T-SURFF
-# ks, Pk = tsurf_1d(tsurf_res, light_field=laser, k_min=-3.0, k_max=3.0, Xi=Xi, sampling_num=900)
-
-# plt.figure()
-# plt.plot(np.sign(ks) * pow(ks, 2) / 2, Pk, lw=0.5)
-# plt.yscale('log')
-# plt.xlim(-3.5, 3.5)
-# plt.ylim(1e-15, 1e-4)
-# plt.yticks([1e-14, 1e-12, 1e-10, 1e-8, 1e-6, 1e-4])
+en = py_get_energy_1d(rt, wave)
+p1 = py_get_kinetic_momentum_1d(rt, psi_pos)
+p2 = py_get_kinetic_momentum_1d(rt, psi_neg)
+print(f"Energy = {en}")
+print(f"Momentum (+) = {p1}")
+print(f"Momentum (-) = {p2}")
+# plt.plot(np.imag(psi_pos))
+# plt.plot(np.imag(psi_neg))
 # plt.show()
