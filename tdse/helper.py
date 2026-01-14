@@ -599,10 +599,10 @@ def py_create_buffer_1d(Nx, delta_x, delta_t, delta_t_itp, shift_x,
         "A_pos_csr": A_pos_csr,
         "A_neg_itp_ab": A_neg_itp_ab,
         "A_pos_itp_csr": A_pos_itp_csr,
-        "P_pos_itp": P_pos_itp,
-        "P_neg_itp": P_neg_itp,
-        "P_pos_itp_csr": P_pos_itp_csr,
-        "P_neg_itp_ab": P_neg_itp_ab,
+        # "P_pos_itp": P_pos_itp,
+        # "P_neg_itp": P_neg_itp,
+        # "P_pos_itp_csr": P_pos_itp_csr,
+        # "P_neg_itp_ab": P_neg_itp_ab,
         
         "accuracy": accuracy,
         "boundary_condition": boundary_condition
@@ -837,3 +837,84 @@ def separate_momentum_components(psi_x, x, plot=False):
     psi_neg /= np.sqrt(np.vdot(psi_neg, psi_neg))
 
     return psi_pos, psi_neg, k, psi_k
+
+
+#############
+
+
+def find_all_points_with_error(a, b, query, delta, tol=1e-9):
+    """
+    在区间 (a, b) 内找出所有点，处理查询误差
+    
+    参数:
+    a, b: 区间端点 (a < b)
+    query: 查询函数，接收 x ∈ (a, b)，返回最近点（存在 < δ 的误差）
+    delta: 最大查询误差（当 |p1-p2| <= 2*delta 时视为同一点）
+    tol: 浮点容差（默认 1e-9），用于边界处理
+    
+    返回:
+    list: 去重后的点集（每个簇取平均值作为代表）
+    """
+    if b - a < 2 * tol:
+        raise ValueError("区间长度太小，无法进行有效查询")
+    
+    # 步骤1: 获取边界点
+    left_val = query(a + tol)
+    right_val = query(b - tol)
+    
+    # 情况1: 仅有一个点（观测距离 <= 2*delta）
+    if abs(left_val - right_val) <= 2 * delta:
+        return [left_val]
+    
+    # 收集所有原始点（含重复）
+    all_points = [left_val, right_val]
+    
+    # 步骤2: 递归查找内部点（要求点间距 > 4*delta）
+    def find_interior(L, R):
+        """递归查找 (L, R) 内满足严格距离条件的点"""
+        # 基本情况: 区间太小，不可能有新点（安全边际 4*delta）
+        if R - L < 4 * delta:
+            return []
+        
+        mid = (L + R) / 2.0
+        y = query(mid)
+        
+        # 检查 y 是否是严格内部点（距离 L 和 R 均 > 2*delta）
+        if L + 2 * delta < y < R - 2 * delta:
+            # 递归搜索子区间
+            left_pts = find_interior(L, y)
+            right_pts = find_interior(y, R)
+            return left_pts + [y] + right_pts
+        return []
+    
+    # 获取内部点
+    interior_points = find_interior(left_val, right_val)
+    all_points.extend(interior_points)
+    
+    # 步骤3: 全局去重（合并同一物理点的多次测量）
+    if not all_points:
+        return []
+    
+    # 按值排序
+    all_points.sort()
+    
+    # 合并距离 <= 2*delta 的点簇
+    clusters = []
+    current_cluster = [all_points[0]]
+    
+    for i in range(1, len(all_points)):
+        # 检查当前点是否属于上一个簇
+        if all_points[i] - current_cluster[-1] <= 2 * delta:
+            current_cluster.append(all_points[i])
+        else:
+            # 完成当前簇，计算代表值
+            cluster_avg = sum(current_cluster) / len(current_cluster)
+            clusters.append(cluster_avg)
+            current_cluster = [all_points[i]]
+    
+    # 处理最后一个簇
+    if current_cluster:
+        cluster_avg = sum(current_cluster) / len(current_cluster)
+        clusters.append(cluster_avg)
+    
+    return clusters

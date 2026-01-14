@@ -32,7 +32,7 @@ Vx_absorb =     EXPORT(lambda x: -100j * pow((np.abs(x) - Xi) / (Lx / 2 - Xi), 8
 # Runtime Environment
 xgrid = create_grid_data(Nx, delta_x, shift_x)
 rt = py_create_buffer_1d(Nx, delta_x, delta_t, imag_delta_t, shift_x, \
-    Vx, Vx_absorb, accuracy=2, boundary_condition="period")
+    Vx, Vx_absorb, accuracy=2, boundary_condition=EXPORT("reflect", "boundary_condition"))
 wave = py_itp_1d(rt, itp_steps)
 
 psi_pos, psi_neg, k, psi_k = separate_momentum_components(wave, xgrid)

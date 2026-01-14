@@ -1,3 +1,1 @@
-from tdse import *
-from multiprocessing import Pool
-import re
+(-np.log(-np.array(en_list)))
