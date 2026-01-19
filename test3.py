@@ -27,7 +27,7 @@ laser = cos2_laser_pulse(delta_t=delta_t, E0=E0, omega0=omega0, nc=nc)
 a0 =            EXPORT(1.0, "a0")
 b0 =            EXPORT(1.0, "b0")
 bound_flag =    EXPORT(1.0, "bound_flag")
-Vx =            lambda x: -b0 / np.sqrt(x * x + a0) + bound_flag * 100 * pow((np.abs(x) - Xi) / (Lx / 2 - Xi), 8) * (np.abs(x) > Xi)
+Vx =            lambda x: -b0 / np.sqrt(x * x + a0) #+ bound_flag * 100 * pow((np.abs(x) - Xi) / (Lx / 2 - Xi), 8) * (np.abs(x) > Xi)
 Vx_absorb =     lambda x: -100j * pow((np.abs(x) - Xi) / (Lx / 2 - Xi), 8) * (np.abs(x) > Xi)
 
 
@@ -43,9 +43,16 @@ en = py_get_energy_1d(rt, wave)
 p1 = py_get_kinetic_momentum_1d(rt, psi_pos)
 p2 = py_get_kinetic_momentum_1d(rt, psi_neg)
 print(f"Energy = {en}")
-print(f"Momentum (+) = {p1}")
-print(f"Momentum (-) = {p2}")
+# print(f"Momentum (+) = {p1}")
+# print(f"Momentum (-) = {p2}")
+# print(py_get_energy_1d(rt, psi_neg))
+# print(f"Momentum wave = {py_get_kinetic_momentum_1d(rt, wave)}")
 # plt.plot(np.imag(psi_pos))
 # plt.plot(np.imag(psi_neg))
 # plt.plot(np.imag(wave))
 # plt.show()
+
+psi_odd = (wave - np.flip(wave)) / 2
+psi_even = (wave + np.flip(wave)) / 2
+psi_odd /= np.sqrt(np.vdot(psi_odd, psi_odd))
+psi_even /= np.sqrt(np.vdot(psi_even, psi_even))

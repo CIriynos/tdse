@@ -2,12 +2,12 @@ from tdse import *
 from multiprocessing import Pool
 import re
 
-wave_list = []
+wave_list_1 = []
+wave_list_2 = []
 en_list = np.arange(0.01, 2.0, 0.01)
 
 imag_delta_t = 0.1
 itp_steps = 200
-# boundary_condition = "reflect"
 boundary_condition = "period"
 bound_flag = 0
 
@@ -15,7 +15,10 @@ for ekk in en_list:
     imag_delta_t = 2 / -ekk
     itp_steps = 100
     execute_code("./test3.py", globals())
-    wave_list.append(wave)
+    wave_list_1.append(psi_odd)
+    wave_list_2.append(psi_even)
+
+wave_list = wave_list_1 + wave_list_2
 
 # plot:
 print(en_list)
