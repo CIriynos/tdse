@@ -374,19 +374,36 @@ def EXPORT(var, name):
     pass    # Do nothing, just an idenfier.
     return var
 
-def replace_export(match):
-    str1 = match.group(1).strip()
-    str2 = match.group(2).strip().strip("'\"")
-    return f'( globals()["{str2}"] if ("{str2}" in globals()) else ({str1}) )'
-
-def transform_code_string(input_str):
-    pattern = r'EXPORT\s*\(\s*([^\s,]+)\s*,\s*([^\)]+)\s*\)'
-    result = re.sub(pattern, replace_export, input_str)
-    return result
+def replace_export_pattern(text):
+    """
+    将字符串中的 EXPORT(str1,str2) 替换为指定格式
+    """
+    # 正则表达式模式
+    # EXPORT\s*\(\s* 匹配 EXPORT( 及其前后的空格
+    # (.*?) 匹配第一个参数（非贪婪模式，保留内部空格）
+    # \s*,\s* 匹配逗号及其前后的空格
+    # (.*?) 匹配第二个参数（非贪婪模式）
+    # \s*\) 匹配右括号及其前面的空格
+    pattern = r'EXPORT\s*\(\s*(.*?)\s*,\s*(.*?)\s*\)'
+    
+    def replacement(match):
+        # 提取两个参数
+        str1 = match.group(1).strip()  # 去除str1的前后空格，保留内部空格
+        str2_raw = match.group(2).strip()  # 去除str2的前后空格
+        
+        # 移除str2中的所有单引号和双引号
+        str2 = str2_raw.replace('"', '').replace("'", '')
+        
+        # 构建替换字符串
+        return f'( globals()["{str2}"] if ("{str2}" in globals() ) else ({str1}) )'
+    
+    # 使用re.sub进行替换
+    return re.sub(pattern, replacement, text, flags=re.DOTALL)
 
 def execute_code(script_name, global_vars_dict):
     code = open(script_name, "r", encoding="utf-8").read()
-    exec(transform_code_string(code), global_vars_dict)
+    # print(replace_export_pattern(code))
+    exec(replace_export_pattern(code), global_vars_dict)
 
 
 ###################################
@@ -642,7 +659,6 @@ def py_thomas_solve_rank1_update(A0, wave, a, b):
 
 
 gauss_pkg_f = lambda x, omega, k0, x0: (1.0 / np.pow(2 * np.pi, 0.25)) * np.exp(1j * k0 * x) * np.exp(-np.pow((x - x0) / (2 * omega), 2))
-
 
 def py_itp_1d(rt, steps=1000):
     xgrid = create_grid_data(rt["Nx"], rt["delta_x"], rt["shift_x"])
@@ -918,3 +934,36 @@ def find_all_points_with_error(a, b, query, delta, tol=1e-9):
         clusters.append(cluster_avg)
     
     return clusters
+
+
+
+##########################
+
+def py_get_dipole_transition_1d(rt, wave1, wave2):
+    wave1 /= np.sqrt(np.vdot(wave1, wave1))
+    wave2 /= np.sqrt(np.vdot(wave2, wave2))
+    xgrid = create_grid_data(rt["Nx"], rt["delta_x"], rt["shift_x"])
+    dipole_transition = np.vdot(wave1, xgrid * wave2)
+    return dipole_transition
+
+def project_out(rt, wave, basis_waves):
+    proj_wave = np.copy(wave)
+    for bw in basis_waves:
+        c = np.vdot(bw, proj_wave) / np.vdot(bw, bw)
+        proj_wave -= c * bw
+    proj_wave /= np.sqrt(np.vdot(proj_wave, proj_wave))
+    return proj_wave
+
+def get_coefficients(rt, wave, basis_waves):
+    coeffs = []
+    for bw in basis_waves:
+        c = np.vdot(bw, wave) / np.vdot(bw, bw)
+        coeffs.append(c)
+    return coeffs
+
+def reconstruct_wave(rt, coeffs, basis_waves):
+    recon_wave = np.zeros_like(basis_waves[0])
+    for i in range(0, len(basis_waves)):
+        recon_wave += coeffs[i] * basis_waves[i]
+    # recon_wave /= np.sqrt(np.vdot(recon_wave, recon_wave))
+    return recon_wave

@@ -15,7 +15,7 @@ imag_delta_t =  EXPORT(0.1, "imag_delta_t")
 itp_steps =     EXPORT(1000, "itp_steps")
 
 # t-surf
-Xi =            EXPORT(200, "Xi")
+Xi =            EXPORT((Lx / 2) * 0.9, "Xi")
 
 # laser
 E0 =            EXPORT(0.05, "E0")
@@ -25,8 +25,10 @@ laser = cos2_laser_pulse(delta_t=delta_t, E0=E0, omega0=omega0, nc=nc)
 
 # potential 
 a0 =            EXPORT(1.0, "a0")
-Vx =            EXPORT(lambda x: -1.0 / np.sqrt(x * x + a0), "Vx")
-Vx_absorb =     EXPORT(lambda x: -100j * pow((np.abs(x) - Xi) / (Lx / 2 - Xi), 8) * (np.abs(x) > Xi), "Vx_absorb")
+b0 =            EXPORT(1.0, "b0")
+bound_flag =    EXPORT(1.0, "bound_flag")
+Vx =            lambda x: -b0 / np.sqrt(x * x + a0) + bound_flag * 100 * pow((np.abs(x) - Xi) / (Lx / 2 - Xi), 8) * (np.abs(x) > Xi)
+Vx_absorb =     lambda x: -100j * pow((np.abs(x) - Xi) / (Lx / 2 - Xi), 8) * (np.abs(x) > Xi)
 
 
 # Runtime Environment
@@ -45,4 +47,5 @@ print(f"Momentum (+) = {p1}")
 print(f"Momentum (-) = {p2}")
 # plt.plot(np.imag(psi_pos))
 # plt.plot(np.imag(psi_neg))
+# plt.plot(np.imag(wave))
 # plt.show()

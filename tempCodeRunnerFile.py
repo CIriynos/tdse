@@ -1,1 +1,0 @@
-(-np.log(-np.array(en_list)))
