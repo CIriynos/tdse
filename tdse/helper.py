@@ -119,7 +119,7 @@ class light_field:
         return np.array([self.t_min + i * self.delta_t for i in range(0, round(((self.t_max - self.t_min)) / self.delta_t))])
 
     def get_steps(self):
-        ts = self.get_ts(self.delta_t)
+        ts = self.get_ts()
         return len(ts)
     
     def get_duration(self):
@@ -321,8 +321,8 @@ def tsurf_1d(tsurf_res, light_field, k_min, k_max, Xi, sampling_num=500):
 
 def fft_phy(ft_data, delta_t):
     N = len(ft_data)
-    windows_data = chebwin(N, at=100)
-    # windows_data = np.hanning(N)
+    # windows_data = chebwin(N, at=100)
+    windows_data = np.hanning(N)
 
     # rate = 1.0
     # a = math.floor(N * rate)
@@ -475,6 +475,43 @@ def load_complex_arrays_from_hdf5(filename):
                 loaded_arrays.append(complex_arr)
     
     return loaded_arrays
+
+
+def save_complex_matrix_to_hdf5(matrix, filename, dataset_name='complex_matrix', compression=None):
+    # 确保目录存在
+    file_path = Path(filename)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # 定义复数的复合数据类型
+    complex_dtype = np.dtype([('real', np.float64), ('imag', np.float64)])
+    
+    # 转换为结构化数组
+    structured_matrix = np.empty(matrix.shape, dtype=complex_dtype)
+    structured_matrix['real'] = matrix.real
+    structured_matrix['imag'] = matrix.imag
+    
+    # 写入HDF5文件
+    with h5py.File(filename, 'w') as f:
+        if compression:
+            f.create_dataset(dataset_name, data=structured_matrix, 
+                             compression=compression)
+        else:
+            f.create_dataset(dataset_name, data=structured_matrix)
+
+
+def load_complex_matrix_from_hdf5(filename, dataset_name='complex_matrix'):
+    if not os.path.exists(filename):
+        raise FileNotFoundError(f"HDF5文件不存在: {filename}")
+    
+    with h5py.File(filename, 'r') as f:
+        if dataset_name not in f:
+            raise ValueError(f"数据集 {dataset_name} 不存在")
+        
+        structured = f[dataset_name][()]
+        complex_matrix = structured['real'] + 1j * structured['imag']
+    
+    return complex_matrix
+
 
 
 ####################################

@@ -30,7 +30,6 @@ for i in range(0, len(eigen_waves_all)):
         dipole_transitions_matrix[i, j] = py_get_dipole_transition_1d(rt, eigen_waves_all[i], eigen_waves_all[j])
 
 fig, ax = plt.subplots()
-
 ax.imshow(np.pow(np.abs(dipole_transitions_matrix), 0.25), cmap='hot')
 ax.set_title("Dipole Transition Matrix Magnitude")
 ax.set_xlabel("Eigenstates")
@@ -40,8 +39,6 @@ ax.set_yticks(range(0, len(eigen_waves_all), 10))
 ax.set_xticklabels([f"{en_list[i]:.2f}" for i in range(0, len(en_list), 10)])
 ax.set_yticklabels([f"{en_list[i]:.2f}" for i in range(0, len(en_list), 10)])
 fig.colorbar(ax.imshow(np.pow(np.abs(dipole_transitions_matrix), 0.25), cmap='hot'), ax=ax, label='Magnitude')
+plt.show()
 
-print(dipole_transitions_matrix[0, 1])
-print(dipole_transitions_matrix[-1, -2])
-
-plt.show()  
+save_complex_matrix_to_hdf5(dipole_transitions_matrix, "dipole_transitions_matrix.h5")

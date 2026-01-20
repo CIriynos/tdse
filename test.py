@@ -21,18 +21,15 @@ Xi =            EXPORT(200, "Xi")
 E0 =            EXPORT(0.05, "E0")
 omega0 =        EXPORT(0.057, "omega0")
 nc =            EXPORT(6, "nc")
+Edc =           EXPORT(0.0, "Edc")
 laser = cos2_laser_pulse(delta_t=delta_t, E0=E0, omega0=omega0, nc=nc)
-# duration = laser.get_duration()
-# dc1 = dc_bias(delta_t, 0.0, 0.5 * duration)
-# dc2 = dc_bias(delta_t, 0.0, 0.5 * duration)
-# laser = append_light_field(dc1, laser)
-# laser = append_light_field(laser, dc2)
-# laser.display()
+dc_bias = dc_bias(delta_t, Edc, laser.get_duration())
+laser_all = combine_light_field(laser, dc_bias)
 
 # potential 
 a0 =            EXPORT(1.0, "a0")
-Vx =            EXPORT(lambda x: -1.0 / np.sqrt(x * x + a0), "Vx")
-Vx_absorb =     EXPORT(lambda x: -100j * pow((np.abs(x) - Xi) / (Lx / 2 - Xi), 8) * (np.abs(x) > Xi), "Vx_absorb")
+Vx =            lambda x: -1.0 / np.sqrt(x * x + a0)
+Vx_absorb =     lambda x: -100j * pow((np.abs(x) - Xi) / (Lx / 2 - Xi), 8) * (np.abs(x) > Xi)
 
 
 # enviroment
@@ -42,20 +39,20 @@ wave = get_ground_state_1d(buffer, itp_steps)
 init_energy = get_energy_1d(buffer, wave)
 
 # tdse-hg-tsurf
-accel, pos, tsurf_res = tdse_fd1d_hg_tsurf(world, buffer, wave, light_field=laser, Xi=Xi)
+accel, pos, tsurf_res = tdse_fd1d_hg_tsurf(world, buffer, wave, light_field=laser_all, Xi=Xi)
 
 # harmonic spectrum
 n_cut_off_estim = math.floor((-init_energy + 3.17 * (E0 ** 2.0 / (4.0 * (omega0 ** 2.0)))) / omega0)
 print(f"n_cut_off = {n_cut_off_estim}")
-hg1, hg2, ks = get_hg_spectrum_1d(laser.get_ts(), accel, pos, max_k=(n_cut_off_estim + 20) * omega0)
+hg1, hg2, ks = get_hg_spectrum_1d(laser.get_ts(), accel, pos, max_k=(30) * omega0)
 
 plt.figure()
-plt.plot(ks / omega0, hg1, label="accel")
-# plt.plot(ks / laser.omega0, hg2, label="pos")
-plt.xticks(range(1, (n_cut_off_estim + 20), 2))
+# plt.plot(ks / omega0, hg1, label="accel")
+plt.plot(ks / laser.omega0, hg2, label="pos")
+plt.xticks(range(1, (30), 2))
 plt.grid(True, alpha=0.2)
 plt.yscale('log')
-# plt.ylim(1e-15, 1e2)
+plt.ylim(1e-15, 1e2)
 plt.legend()
 plt.show()
 
