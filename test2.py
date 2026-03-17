@@ -29,12 +29,12 @@ import re
 # plt.show()
 
 
-rate = 1
+rate = 2
 Nx = 5000 * rate
 delta_x = 0.2 / rate
 delta_t = 0.05 / rate
 Xi = Nx * delta_x / 2 * 0.8
 
 omega0 = 0.057
-E0 = 0.01
+E0 = 0.035
 execute_code("./test.py", globals())

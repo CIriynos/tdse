@@ -66,4 +66,4 @@ fig.colorbar(ax.imshow(np.pow(np.abs(dipole_transitions_matrix), 0.25), cmap='ho
 print(dipole_transitions_matrix[0, 1])
 print(dipole_transitions_matrix[-1, -2])
 
-plt.show()  
+plt.show()

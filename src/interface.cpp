@@ -64,18 +64,25 @@ extern "C"
         return (double)accel_expect.real();
     }
 
-    DLL_EXPORT
-    void tdse_laser_fd1d_onestep(void * buffer_p, void * wavefunc, double At)
-    {
-        tdse_laser_fd1d_onestep(*(RuntimeBuffer1D*)buffer_p, *(std::vector<cplx>*) wavefunc, (*(RuntimeBuffer1D*)buffer_p).delta_t, At);
-    }
-
     double * convert_cplx_to_array2(const cplx& num)
     {
         double * num_c_complex = new double[2];
         num_c_complex[0] = (double)num.real();
         num_c_complex[1] = (double)num.imag();
         return num_c_complex;
+    }
+
+    DLL_EXPORT 
+    double * project_out_bound_state_1d(void * world_p, void * wavefunc, void * bound_state)
+    {
+        cplx res = project_out_bound_state_1d(*(PhysicalWorld1D*)world_p, *(std::vector<cplx>*) wavefunc, *(std::vector<cplx>*) bound_state);
+        return convert_cplx_to_array2(res);
+    }
+
+    DLL_EXPORT
+    void tdse_laser_fd1d_onestep(void * buffer_p, void * wavefunc, double At)
+    {
+        tdse_laser_fd1d_onestep(*(RuntimeBuffer1D*)buffer_p, *(std::vector<cplx>*) wavefunc, (*(RuntimeBuffer1D*)buffer_p).delta_t, At);
     }
 
     DLL_EXPORT
@@ -109,5 +116,32 @@ extern "C"
             wave_real[i] = wave[i].real();
             wave_imag[i] = wave[i].imag();
         }
+    }
+
+    DLL_EXPORT
+    void * get_wave_copy(void * wd_p, void * wavefunc)
+    {
+        std::vector<cplx>& wave = *(std::vector<cplx>*) wavefunc;
+        std::vector<cplx> * wave_copy = new std::vector<cplx>(wave);
+        return (void *) wave_copy;
+    }
+
+    DLL_EXPORT
+    void superimpose_wave(void * wd_p, void * wavefunc, void * added_wave, double coeff_real, double coeff_imag)
+    {
+        std::vector<cplx>& wave = *(std::vector<cplx>*) wavefunc;
+        std::vector<cplx>& added_wave_vec = *(std::vector<cplx>*) added_wave;
+        cplx coeff(coeff_real, coeff_imag);
+        for(int i = 0; i < wave.size(); i++) {
+            wave[i] += coeff * added_wave_vec[i];
+        }
+    }
+
+    DLL_EXPORT
+    void * get_empty_wave(void * wd_p)
+    {
+        int Nx = ((PhysicalWorld1D*)wd_p)->xgrid.N;
+        std::vector<cplx> * empty_wave = new std::vector<cplx>(Nx, cplx(0.0, 0.0));
+        return (void *) empty_wave;
     }
 }

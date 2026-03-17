@@ -249,6 +249,17 @@ inline cplx get_accel_expect_1d(const PhysicalWorld1D& world, const std::vector<
     return accel_expect * world.xgrid.delta;
 }
 
+inline cplx project_out_bound_state_1d(const PhysicalWorld1D& world, std::vector<cplx>& wavefunc, const std::vector<cplx>& bound_state) {
+    cplx overlap = cplx(0.0, 0.0);
+    for (int i = 0; i < world.xgrid.N; ++i) {
+        overlap += std::conj(bound_state[i]) * wavefunc[i] * world.xgrid.delta;
+    }
+    for (int i = 0; i < world.xgrid.N; ++i) {
+        wavefunc[i] -= overlap * bound_state[i];
+    }
+    return overlap;
+}
+
 /**
  * @brief Perform imaginary time propagation for a wavefunction in 1D.
  *        It is a method to find the ground state of a quantum system.
@@ -279,6 +290,8 @@ inline void imaginary_time_propagation_1d(RuntimeBuffer1D& buffer, std::vector<c
         }
     }
 }
+
+
 
 
 inline void tdse_laser_fd1d_onestep(

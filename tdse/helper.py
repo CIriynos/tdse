@@ -26,6 +26,9 @@ lib.get_pos_expect_1d.restype = c_double
 lib.get_accel_expect_1d.restype = c_double
 lib.get_wave_value_1d.restype = POINTER(c_double)
 lib.get_wave_1diff_value_1d.restype = POINTER(c_double)
+lib.project_out_bound_state_1d.restype = POINTER(c_double)
+lib.get_wave_copy.restype = c_void_p
+lib.get_empty_wave.restype = c_void_p
 
 
 def create_grid_data(N, delta, shift):
@@ -81,6 +84,10 @@ def get_accel_expect_1d(world, wavefunc):
     res = lib.get_accel_expect_1d(c_void_p(world), c_void_p(wavefunc))
     return res
 
+def project_out_bound_state_1d(world, wavefunc, bound_state):
+    res = lib.project_out_bound_state_1d(c_void_p(world), c_void_p(wavefunc), c_void_p(bound_state))
+    return res[0] + 1j * res[1]
+
 def get_wave_value_1d(world, wavefunc, x_pos):
     res = lib.get_wave_value_1d(c_void_p(world), c_void_p(wavefunc), c_double(x_pos))
     return res[0] + 1j * res[1]
@@ -105,6 +112,16 @@ def get_wave_1diff_value_1d(world, wavefunc, x_pos):
     res = lib.get_wave_1diff_value_1d(c_void_p(world), c_void_p(wavefunc), c_double(x_pos))
     return res[0] + 1j * res[1]
 
+def get_wave_copy(world, wavefunc):
+    wave = lib.get_wave_copy(c_void_p(world), c_void_p(wavefunc))
+    return wave
+
+def superimpose_wave(world, wavefunc, added_wave, coeff):
+    lib.superimpose_wave(c_void_p(world), c_void_p(wavefunc), c_void_p(added_wave), c_double(np.real(coeff)), c_double(np.imag(coeff)))
+
+def get_empty_wave(world):
+    wave = lib.get_empty_wave(c_void_p(world))
+    return wave
 
 ###################################
 
@@ -149,6 +166,7 @@ def combine_light_field(light1, light2):
     light.Et = lambda t: light1.Et(t) + light2.Et(t)
     return light
 
+
 def append_light_field(light1, light2):
     t_min = light1.t_min
     t_max = light1.t_max + (light2.t_max - light2.t_min)
@@ -169,6 +187,24 @@ class dc_bias(light_field):
         )
         self.Et = lambda t: Edc * (t >= self.t_min and t <= self.t_max)
 
+def flat_top_window(t, t_min, t_max, ratio=0.2):
+    if t < t_min or t > t_max:
+        return 0.0
+    elif t < t_min + (t_max - t_min) * ratio:
+        return 0.5 * (1.0 - np.cos(np.pi * (t - t_min) / ((t_max - t_min) * ratio)))
+    elif t > t_max - (t_max - t_min) * ratio:
+        return 0.5 * (1.0 - np.cos(np.pi * (t - t_max) / ((t_max - t_min) * ratio)))
+    else:
+        return 1.0
+
+class dc_bias_smooth(light_field):
+    def __init__(self, delta_t, Edc, last_time, t_shift=0.0):
+        super().__init__(
+            delta_t = delta_t,
+            t_min = t_shift,
+            t_max = t_shift + last_time
+        )
+        self.Et = lambda t: Edc * (t >= self.t_min and t <= self.t_max) * flat_top_window(t, self.t_min, self.t_max, ratio=0.2)
 
 class cos2_laser_pulse(light_field):
     def __init__(self, delta_t, E0, omega0, nc, phi0=0.0, t_shift=0.0):
@@ -290,6 +326,58 @@ def tdse_fd1d_hg_tsurf(world, buffer, wave, light_field, Xi, logging_interval=50
     return [accel_expect_data, pos_expect_data, tsurf_res]
 
 
+
+def tdse_fd1d_hg_analytical(world, buffer, wave, light_field, Xi, bound_states, logging_interval=1000):
+    ts = light_field.get_ts()
+    At_data = light_field.get_At_data()
+    Et_data = light_field.get_Et_data()
+    accel_expect_data = np.zeros(len(ts))
+    pos_expect_data = np.zeros(len(ts))
+    coeff_list = np.zeros(len(bound_states), dtype=complex)
+
+    free_part_wave = get_empty_wave(world)
+    bound_part_wave = get_empty_wave(world)
+    accel_expect_data_free = np.zeros(len(ts))
+    pos_expect_data_free = np.zeros(len(ts))
+    accel_expect_data_bound = np.zeros(len(ts))
+    pos_expect_data_bound = np.zeros(len(ts))
+
+    for (i, t) in enumerate(ts):
+        tdse_laser_fd1d_onestep(buffer, wave, At=At_data[i])
+
+        # total expectation = free part + bound part
+        bound_part_wave = get_empty_wave(world)
+        accel_expect_data[i] = get_accel_expect_1d(world=world, wavefunc=wave) - Et_data[i]
+        pos_expect_data[i] = get_pos_expect_1d(world=world, wavefunc=wave)
+
+        # project out bound states (not normalized)
+        free_part_wave = get_wave_copy(world, wave)
+        for (j, bound_state) in enumerate(bound_states):
+            coeff_list[j] = project_out_bound_state_1d(world=world, wavefunc=free_part_wave, bound_state=bound_state)
+        
+        # reconstruct bound part
+        for (j, bound_state) in enumerate(bound_states):
+            superimpose_wave(world, bound_part_wave, bound_state, coeff_list[j])
+
+        free_part_wave_norm = get_norm_1d(world, free_part_wave)
+        bound_part_wave_norm = get_norm_1d(world, bound_part_wave)
+
+        # get free part expectation
+        accel_expect_data_free[i] = get_accel_expect_1d(world=world, wavefunc=free_part_wave) - Et_data[i] * free_part_wave_norm
+        pos_expect_data_free[i] = get_pos_expect_1d(world=world, wavefunc=free_part_wave)
+        # get bound part expectation
+        accel_expect_data_bound[i] = get_accel_expect_1d(world=world, wavefunc=bound_part_wave) - Et_data[i] * bound_part_wave_norm
+        pos_expect_data_bound[i] = get_pos_expect_1d(world=world, wavefunc=bound_part_wave)
+
+        # logging
+        if i % logging_interval == 0:
+            energy = get_energy_1d(buffer, wave)
+            norm = get_norm_1d(world, wave)
+            print(f"[TDSE-fd1d] energy = {energy}, norm = {norm}, free part norm = {free_part_wave_norm}, bound part norm = {bound_part_wave_norm}")
+
+    return [accel_expect_data, pos_expect_data, accel_expect_data_free, pos_expect_data_free, accel_expect_data_bound, pos_expect_data_bound]
+
+
 def tsurf_1d(tsurf_res, light_field, k_min, k_max, Xi, sampling_num=500):
     print(f"[TSURF-1d] Excecuting t-surf(1d) ...")
     X_pos_vals, X_neg_vals, X_pos_dvals, X_neg_dvals = tsurf_res
@@ -347,6 +435,23 @@ def get_hg_spectrum_1d(ts, accel_data, pos_data, max_k):
 
     max_id = math.floor(max_k / delta_k)
     return hg1[0: max_id], hg2[0: max_id], ks[0: max_id]
+
+
+def get_pos_expect_spectrum_1d(ts, pos_data, max_k):
+    delta_t = ts[1] - ts[0]
+    N = len(pos_data)
+    pos_fft_data, ks, delta_k = fft_phy(pos_data, delta_t)
+
+    max_id = math.floor(max_k / delta_k)
+    return pos_fft_data[0: max_id], ks[0: max_id]
+
+def get_accel_expect_spectrum_1d(ts, accel_data, max_k):
+    delta_t = ts[1] - ts[0]
+    N = len(accel_data)
+    accel_fft_data, ks, delta_k = fft_phy(accel_data, delta_t)
+
+    max_id = math.floor(max_k / delta_k)
+    return accel_fft_data[0: max_id], ks[0: max_id]
 
 ####################################
 
@@ -1004,3 +1109,10 @@ def reconstruct_wave(rt, coeffs, basis_waves):
         recon_wave += coeffs[i] * basis_waves[i]
     # recon_wave /= np.sqrt(np.vdot(recon_wave, recon_wave))
     return recon_wave
+
+
+
+################
+
+def get_imag_delta_t_from_ek(ek):
+    return 2 / -ek

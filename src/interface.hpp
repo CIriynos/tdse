@@ -29,6 +29,8 @@ extern "C"
 
     DLL_EXPORT double get_accel_expect_1d(void * wd_p, void * wavefunc);
 
+    DLL_EXPORT double * project_out_bound_state_1d(void * wd_p, void * wavefunc, void * bound_state);
+
     DLL_EXPORT double * get_norm_1d(void * wd_p, void * wavefunc);
 
     DLL_EXPORT void tdse_laser_fd1d_onestep(void * buffer_p, void * wavefunc, double At);
@@ -38,6 +40,12 @@ extern "C"
     DLL_EXPORT double * get_wave_1diff_value_1d(void * wd_p, void * wavefunc, double x_pos);
 
     DLL_EXPORT void get_wave_value_list_1d(void * wd_p, void * wavefunc, double * wave_real, double * wave_imag);
+
+    DLL_EXPORT void * get_wave_copy(void * wd_p, void * wavefunc);
+
+    DLL_EXPORT void * get_empty_wave(void * wd_p);
+
+    DLL_EXPORT void superimpose_wave(void * wd_p, void * wavefunc, void * added_wave, double coeff_real, double coeff_imag);
 }
 
 

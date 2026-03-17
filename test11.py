@@ -38,7 +38,8 @@ import scipy.sparse.linalg as spla
 from scipy.linalg import solve_banded
 
 
-bound_state_indices = [i for i in range(len(eigen_waves) - 42)]
+# bound_state_indices = [i for i in range(len(eigen_waves) - 42)]
+bound_state_indices = [i for i in range(len(eigen_waves) - 42 - 0)]
 D = dipole_transitions_matrix[np.ix_(bound_state_indices, bound_state_indices)]
 
 fig, ax = plt.subplots()
@@ -59,10 +60,10 @@ def create_t_vec(N, t):
 
 # propagation
 N = len(bound_state_indices)
-delta_t = 0.05
+delta_t = 0.05 / 2
 
 E0 = 0.03
-omega0 = 0.057
+omega0 = 0.05 * 0.6
 nc = 15
 Edc = 0
 laser = cos2_laser_pulse(delta_t=delta_t, E0=E0, omega0=omega0, nc=nc)
@@ -100,10 +101,12 @@ fig, ax = plt.subplots()
 ax.bar(range(N), np.abs(state)**2)
 ax.set_yscale('log')
 
+
 fig, ax = plt.subplots()
-hg1_py, hg2_py, ks_py = get_hg_spectrum_1d(laser.get_ts(), dipole_values, dipole_values, max_k=(30) * omega0)
+n_cut_off_estim = math.floor((-en_list[0] + 3.17 * (E0 ** 2.0 / (4.0 * (omega0 ** 2.0)))) / omega0)
+hg1_py, hg2_py, ks_py = get_hg_spectrum_1d(laser.get_ts(), dipole_values, dipole_values, max_k=(n_cut_off_estim + 20) * omega0)
 ax.plot(ks_py / laser.omega0, hg2_py, label="pos")
-plt.xticks(range(1, (30), 2))
+plt.xticks(range(1, (n_cut_off_estim + 20), 2))
 plt.grid(True, alpha=0.2)
 plt.yscale('log')
 plt.ylim(1e-15, 1e2)
@@ -117,7 +120,7 @@ plt.legend()
 
 #################
 
-rate = 1
+rate = 2
 Nx = 3600 * rate
 delta_x = 0.2 / rate
 delta_t = 0.05 / rate
@@ -130,7 +133,7 @@ ax.plot(ks / laser.omega0, hg2, label="pos_tdse", linestyle='dashed')
 plt.xticks(range(1, (30), 2))
 plt.grid(True, alpha=0.2)
 plt.yscale('log')
-plt.ylim(1e-15, 1e2)
+plt.ylim(1e-18, 1e2)
 plt.legend()
 
 

@@ -44,15 +44,15 @@ accel, pos, tsurf_res = tdse_fd1d_hg_tsurf(world, buffer, wave, light_field=lase
 # harmonic spectrum
 n_cut_off_estim = math.floor((-init_energy + 3.17 * (E0 ** 2.0 / (4.0 * (omega0 ** 2.0)))) / omega0)
 print(f"n_cut_off = {n_cut_off_estim}")
-hg1, hg2, ks = get_hg_spectrum_1d(laser.get_ts(), accel, pos, max_k=(30) * omega0)
+hg1, hg2, ks = get_hg_spectrum_1d(laser.get_ts(), accel, pos, max_k=(n_cut_off_estim + 20) * omega0)
 
 plt.figure()
 # plt.plot(ks / omega0, hg1, label="accel")
 plt.plot(ks / laser.omega0, hg2, label="pos")
-plt.xticks(range(1, (30), 2))
+plt.xticks(range(1, (n_cut_off_estim + 20), 2))
 plt.grid(True, alpha=0.2)
 plt.yscale('log')
-plt.ylim(1e-15, 1e2)
+plt.ylim(1e-18, 1e2)
 plt.legend()
 plt.show()
 
