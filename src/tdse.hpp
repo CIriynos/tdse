@@ -90,7 +90,6 @@ struct PhysicalWorld1D {
         absorption_potential_data(xgrid.get_number())
     {
     }
-
 };
 
 
@@ -240,6 +239,24 @@ inline cplx get_pos_expect_1d(const PhysicalWorld1D& world, const std::vector<cp
     return pos_expect * world.xgrid.delta;
 }
 
+inline cplx get_pos_expect_1d_masked(const PhysicalWorld1D& world, const std::vector<cplx>& wavefunc, double mask_sigma) {
+    cplx pos_expect = cplx(0.0, 0.0);
+    for(int i = 0; i < world.xgrid.N; ++i) {
+        double x = world.xgrid.get_pos(i);
+        pos_expect += std::conj(wavefunc[i]) * wavefunc[i] * x; //* std::exp(- (x * x) / (mask_sigma * mask_sigma));
+    }
+    return pos_expect * world.xgrid.delta;
+}
+
+inline cplx get_pos_expect_cross_1d(const PhysicalWorld1D& world, const std::vector<cplx>& wavefunc_free, const std::vector<cplx>& wavefunc_bound) {
+    cplx pos_expect = cplx(0.0, 0.0);
+    for(int i = 0; i < world.xgrid.N; ++i) {
+        double x = world.xgrid.get_pos(i);
+        pos_expect += std::conj(wavefunc_bound[i]) * wavefunc_free[i] * x + std::conj(wavefunc_free[i]) * wavefunc_bound[i] * x;
+    }
+    return pos_expect * world.xgrid.delta;
+}
+
 inline cplx get_accel_expect_1d(const PhysicalWorld1D& world, const std::vector<cplx>& wavefunc) {
     cplx accel_expect = cplx(0.0, 0.0);
     auto dU = get_diff_data_2o(world.potential_data, world.xgrid.delta);
@@ -351,6 +368,11 @@ inline cplx tsurf_1d(RuntimeBuffer1D& buffer,
 // {
 
 // } 
+
+
+
+
+
 
 
 #endif // __TDSE_HPP__

@@ -2,6 +2,9 @@ from tdse import *
 from multiprocessing import Pool
 import re
 
+a0 = 2.0
+short_range_flag = True
+short_range_sigma = 5.0
 def query_func(ek):
     global imag_delta_t, itp_steps
     print(f"Calculating for ek = {ek} ...")
@@ -32,4 +35,4 @@ ax.eventplot(en_list)
 ax.set(xlim=(-0.7, 0.0))
 plt.show()
 
-save_complex_arrays_to_hdf5(wave_list, filename="eigen_waves.h5")
+# save_complex_arrays_to_hdf5(wave_list, filename="eigen_waves.h5")

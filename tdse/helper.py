@@ -23,13 +23,15 @@ lib.tdse_laser_fd1d_onestep.restype = c_double
 lib.get_energy_1d.restype = c_double
 lib.get_norm_1d.restype = POINTER(c_double)
 lib.get_pos_expect_1d.restype = c_double
+lib.get_pos_expect_1d_masked.restype = c_double
+lib.get_pos_expect_cross_1d.restype = c_double
 lib.get_accel_expect_1d.restype = c_double
 lib.get_wave_value_1d.restype = POINTER(c_double)
 lib.get_wave_1diff_value_1d.restype = POINTER(c_double)
 lib.project_out_bound_state_1d.restype = POINTER(c_double)
 lib.get_wave_copy.restype = c_void_p
 lib.get_empty_wave.restype = c_void_p
-
+lib.transform_to_length_gauge.restype = None
 
 def create_grid_data(N, delta, shift):
     return np.array([shift + delta * i for i in range(0, N)])
@@ -80,8 +82,16 @@ def get_pos_expect_1d(world, wavefunc):
     res = lib.get_pos_expect_1d(c_void_p(world), c_void_p(wavefunc))
     return res
 
+def get_pos_expect_1d_masked(world, wavefunc, mask_sigma):
+    res = lib.get_pos_expect_1d_masked(c_void_p(world), c_void_p(wavefunc), c_double(mask_sigma))
+    return res
+
 def get_accel_expect_1d(world, wavefunc):
     res = lib.get_accel_expect_1d(c_void_p(world), c_void_p(wavefunc))
+    return res
+
+def get_pos_expect_cross_1d(world, wavefunc_free, wavefunc_bound):
+    res = lib.get_pos_expect_cross_1d(c_void_p(world), c_void_p(wavefunc_free), c_void_p(wavefunc_bound))
     return res
 
 def project_out_bound_state_1d(world, wavefunc, bound_state):
@@ -122,6 +132,9 @@ def superimpose_wave(world, wavefunc, added_wave, coeff):
 def get_empty_wave(world):
     wave = lib.get_empty_wave(c_void_p(world))
     return wave
+
+def transform_to_length_gauge(world, wavefunc, At):
+    lib.transform_to_length_gauge(c_void_p(world), c_void_p(wavefunc), c_double(At))
 
 ###################################
 
@@ -342,16 +355,23 @@ def tdse_fd1d_hg_analytical(world, buffer, wave, light_field, Xi, bound_states, 
     accel_expect_data_bound = np.zeros(len(ts))
     pos_expect_data_bound = np.zeros(len(ts))
 
+    pos_expect_data_cross = np.zeros(len(ts))
+
+    bound_norm_data = np.zeros(len(ts))
+
+    mask_sigma = 20
+
     for (i, t) in enumerate(ts):
         tdse_laser_fd1d_onestep(buffer, wave, At=At_data[i])
 
-        # total expectation = free part + bound part
-        bound_part_wave = get_empty_wave(world)
-        accel_expect_data[i] = get_accel_expect_1d(world=world, wavefunc=wave) - Et_data[i]
-        pos_expect_data[i] = get_pos_expect_1d(world=world, wavefunc=wave)
-
         # project out bound states (not normalized)
+        bound_part_wave = get_empty_wave(world)
         free_part_wave = get_wave_copy(world, wave)
+        transform_to_length_gauge(world, free_part_wave, At_data[i])
+
+        accel_expect_data[i] = get_accel_expect_1d(world=world, wavefunc=free_part_wave) - Et_data[i] * get_norm_1d(world, wave)
+        pos_expect_data[i] = get_pos_expect_1d_masked(world=world, wavefunc=free_part_wave, mask_sigma=mask_sigma)
+
         for (j, bound_state) in enumerate(bound_states):
             coeff_list[j] = project_out_bound_state_1d(world=world, wavefunc=free_part_wave, bound_state=bound_state)
         
@@ -364,10 +384,14 @@ def tdse_fd1d_hg_analytical(world, buffer, wave, light_field, Xi, bound_states, 
 
         # get free part expectation
         accel_expect_data_free[i] = get_accel_expect_1d(world=world, wavefunc=free_part_wave) - Et_data[i] * free_part_wave_norm
-        pos_expect_data_free[i] = get_pos_expect_1d(world=world, wavefunc=free_part_wave)
+        pos_expect_data_free[i] = get_pos_expect_1d_masked(world=world, wavefunc=free_part_wave, mask_sigma=mask_sigma)
         # get bound part expectation
         accel_expect_data_bound[i] = get_accel_expect_1d(world=world, wavefunc=bound_part_wave) - Et_data[i] * bound_part_wave_norm
-        pos_expect_data_bound[i] = get_pos_expect_1d(world=world, wavefunc=bound_part_wave)
+        pos_expect_data_bound[i] = get_pos_expect_1d_masked(world=world, wavefunc=bound_part_wave, mask_sigma=mask_sigma)
+        # get cross term expectation
+        pos_expect_data_cross[i] = get_pos_expect_cross_1d(world=world, wavefunc_free=free_part_wave, wavefunc_bound=bound_part_wave)
+
+        bound_norm_data[i] = np.real(get_norm_1d(world, bound_part_wave))
 
         # logging
         if i % logging_interval == 0:
@@ -375,7 +399,7 @@ def tdse_fd1d_hg_analytical(world, buffer, wave, light_field, Xi, bound_states, 
             norm = get_norm_1d(world, wave)
             print(f"[TDSE-fd1d] energy = {energy}, norm = {norm}, free part norm = {free_part_wave_norm}, bound part norm = {bound_part_wave_norm}")
 
-    return [accel_expect_data, pos_expect_data, accel_expect_data_free, pos_expect_data_free, accel_expect_data_bound, pos_expect_data_bound]
+    return [accel_expect_data, pos_expect_data, accel_expect_data_free, pos_expect_data_free, accel_expect_data_bound, pos_expect_data_bound, pos_expect_data_cross, bound_norm_data]
 
 
 def tsurf_1d(tsurf_res, light_field, k_min, k_max, Xi, sampling_num=500):
@@ -623,7 +647,7 @@ def load_complex_matrix_from_hdf5(filename, dataset_name='complex_matrix'):
 # TDSE
 from scipy import sparse
 import scipy.sparse.linalg as spla
-from scipy.linalg import solve_banded
+from scipy.linalg import solve_banded, eigh_tridiagonal
 
 def get_time(f):
     def inner(*arg,**kwarg):
@@ -640,6 +664,120 @@ def create_sparse_dia_mat(N, diag_num_list):
     identifier_list = [i for i in range(0 - shift, band_width - shift)]
     data = [np.ones(N - abs(i - shift)) * diag_num_list[i] for i in range(0, band_width)]
     return sparse.diags(data, identifier_list, format='dia', dtype="complex")
+
+
+def _extract_real_symmetric_tridiagonal(H, tol=1e-12):
+    if H.shape[0] != H.shape[1]:
+        raise ValueError("H must be square.")
+
+    if sparse.issparse(H):
+        main = np.asarray(H.diagonal(0))
+        upper = np.asarray(H.diagonal(1))
+        lower = np.asarray(H.diagonal(-1))
+        nnz_tridiag = main.size + upper.size + lower.size
+        if H.nnz > nnz_tridiag:
+            raise ValueError("H is not tridiagonal; a full diagonalization path is required.")
+    else:
+        H = np.asarray(H)
+        if np.count_nonzero(np.triu(H, 2)) != 0 or np.count_nonzero(np.tril(H, -2)) != 0:
+            raise ValueError("H is not tridiagonal; a full diagonalization path is required.")
+        main = np.diag(H)
+        upper = np.diag(H, 1)
+        lower = np.diag(H, -1)
+
+    if np.max(np.abs(np.imag(main))) > tol:
+        raise ValueError("The diagonal of H is not real within tolerance.")
+    if np.max(np.abs(lower - np.conjugate(upper))) > tol:
+        raise ValueError("H is not Hermitian within tolerance.")
+    if np.max(np.abs(np.imag(upper))) > tol:
+        raise ValueError("The off-diagonal of H is not real within tolerance.")
+
+    return np.real(main), np.real(upper)
+
+
+def diagonalize_hermitian_matrix(H, full_matrix_max_n=4096, tol=1e-12):
+    n = H.shape[0]
+    if n > full_matrix_max_n:
+        raise ValueError(
+            f"Full diagonalization for a {n}x{n} matrix is too expensive to materialize. "
+            "Use build_sign_operator(H, ...) instead."
+        )
+
+    try:
+        d, e = _extract_real_symmetric_tridiagonal(H, tol=tol)
+        evals, U = eigh_tridiagonal(d, e)
+    except ValueError:
+        H_dense = H.toarray() if sparse.issparse(H) else np.asarray(H)
+        if np.max(np.abs(H_dense - H_dense.conj().T)) > tol:
+            raise ValueError("H is not Hermitian within tolerance.")
+        evals, U = np.linalg.eigh(H_dense)
+
+    D = np.diag(evals)
+    return U, D, evals
+
+
+def build_sign_operator(H, zero_tol=1e-12, full_matrix_max_n=4096):
+    n = H.shape[0]
+
+    if n <= full_matrix_max_n:
+        U, _, evals = diagonalize_hermitian_matrix(H, full_matrix_max_n=full_matrix_max_n, tol=zero_tol)
+        signs = np.zeros_like(evals)
+        signs[evals > zero_tol] = 1.0
+        signs[evals < -zero_tol] = -1.0
+        sign_matrix = (U * signs) @ U.conj().T
+        return {
+            "kind": "dense",
+            "shape": H.shape,
+            "evals": evals,
+            "U": U,
+            "signs": signs,
+            "matrix": sign_matrix,
+        }
+
+    d, e = _extract_real_symmetric_tridiagonal(H, tol=zero_tol)
+    negative_evals, negative_evecs = eigh_tridiagonal(
+        d, e, select="v", select_range=(-np.inf, -zero_tol)
+    )
+    zero_evals, zero_evecs = eigh_tridiagonal(
+        d, e, select="v", select_range=(-zero_tol, zero_tol)
+    )
+    return {
+        "kind": "negative_subspace",
+        "shape": H.shape,
+        "negative_evals": negative_evals,
+        "negative_evecs": negative_evecs,
+        "zero_evals": zero_evals,
+        "zero_evecs": zero_evecs,
+        "negative_count": len(negative_evals),
+        "zero_count": len(zero_evals),
+    }
+
+
+def apply_sign_operator(sign_operator, wave):
+    psi = np.asarray(wave, dtype=np.complex128)
+    if psi.ndim != 1:
+        raise ValueError("wave must be a 1D array.")
+    if psi.shape[0] != sign_operator["shape"][0]:
+        raise ValueError("wave size does not match the operator size.")
+
+    if sign_operator["kind"] == "dense":
+        return sign_operator["matrix"] @ psi
+
+    result = psi.copy()
+    negative_evecs = sign_operator["negative_evecs"]
+    if negative_evecs.size > 0:
+        result -= 2.0 * (negative_evecs @ (negative_evecs.conj().T @ psi))
+
+    zero_evecs = sign_operator["zero_evecs"]
+    if zero_evecs.size > 0:
+        result -= zero_evecs @ (zero_evecs.conj().T @ psi)
+
+    return result
+
+
+def apply_hamiltonian_sign(H, wave, zero_tol=1e-12, full_matrix_max_n=4096):
+    sign_operator = build_sign_operator(H, zero_tol=zero_tol, full_matrix_max_n=full_matrix_max_n)
+    return apply_sign_operator(sign_operator, wave)
 
 def create_band(A_dia):
     N = A_dia.shape[0]

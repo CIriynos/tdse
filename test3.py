@@ -24,10 +24,11 @@ nc =            EXPORT(6, "nc")
 laser = cos2_laser_pulse(delta_t=delta_t, E0=E0, omega0=omega0, nc=nc)
 
 # potential 
-a0 =            EXPORT(1.0, "a0")
+a0 =            EXPORT(2.0, "a0")
 b0 =            EXPORT(1.0, "b0")
-bound_flag =    EXPORT(1.0, "bound_flag")
-Vx =            lambda x: -b0 / np.sqrt(x * x + a0) #+ bound_flag * 100 * pow((np.abs(x) - Xi) / (Lx / 2 - Xi), 8) * (np.abs(x) > Xi)
+short_range_flag =    EXPORT(True, "short_range_flag")
+short_range_sigma =   EXPORT(5.0, "short_range_sigma")
+Vx =            lambda x: -b0 / np.sqrt(x * x + a0) * (np.exp(- x * x / (short_range_sigma ** 2)) if short_range_flag == True else 1.0)
 Vx_absorb =     lambda x: -100j * pow((np.abs(x) - Xi) / (Lx / 2 - Xi), 8) * (np.abs(x) > Xi)
 
 
@@ -36,6 +37,11 @@ xgrid = create_grid_data(Nx, delta_x, shift_x)
 rt = py_create_buffer_1d(Nx, delta_x, delta_t, imag_delta_t, shift_x, \
     Vx, Vx_absorb, accuracy=2, boundary_condition=EXPORT("reflect", "boundary_condition"))
 wave = py_itp_1d(rt, itp_steps)
+
+# fig, ax = plt.subplots()
+# ax.plot(xgrid, rt["V"].diagonal())
+# ax.set(xlim=(-10, 10))
+# plt.show()
 
 psi_pos, psi_neg, k, psi_k = separate_momentum_components(wave, xgrid)
 
@@ -56,3 +62,17 @@ psi_odd = (wave - np.flip(wave)) / 2
 psi_even = (wave + np.flip(wave)) / 2
 psi_odd /= np.sqrt(np.vdot(psi_odd, psi_odd))
 psi_even /= np.sqrt(np.vdot(psi_even, psi_even))
+
+sign_H = build_sign_operator(rt["H"], zero_tol=1e-10)
+# wave_sign = apply_sign_operator(sign_H, wave)
+
+sign_H["negative_count"]
+plt.plot(sign_H["negative_evecs"][:, 2], label="sgn(H) negative evec 1")
+plt.show()
+
+# plt.plot(np.abs(wave), label="wave")
+# plt.plot(np.abs(wave_sign), label="sgn(H) wave")
+# plt.legend()
+# plt.show()
+
+# print(f"sgn(H) representation = {sign_H['kind']}")

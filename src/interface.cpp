@@ -57,6 +57,20 @@ extern "C"
         return (double)pos_expect.real();
     }
 
+    DLL_EXPORT
+    double get_pos_expect_1d_masked(void * world_p, void * wavefunc, double mask_sigma)
+    {
+        cplx pos_expect = get_pos_expect_1d_masked(*(PhysicalWorld1D*)world_p, *(std::vector<cplx>*) wavefunc, mask_sigma);
+        return (double)pos_expect.real();
+    }
+
+    DLL_EXPORT 
+    double get_pos_expect_cross_1d(void * world_p, void * wavefunc_free, void * wavefunc_bound)
+    {
+        cplx pos_expect = get_pos_expect_cross_1d(*(PhysicalWorld1D*)world_p, *(std::vector<cplx>*) wavefunc_free, *(std::vector<cplx>*) wavefunc_bound);
+        return (double)pos_expect.real();
+    }
+
     DLL_EXPORT 
     double get_accel_expect_1d(void * world_p, void * wavefunc)
     {
@@ -143,5 +157,16 @@ extern "C"
         int Nx = ((PhysicalWorld1D*)wd_p)->xgrid.N;
         std::vector<cplx> * empty_wave = new std::vector<cplx>(Nx, cplx(0.0, 0.0));
         return (void *) empty_wave;
+    }
+
+    DLL_EXPORT
+    void transform_to_length_gauge(void * wd_p, void * wavefunc, double At)
+    {
+        std::vector<cplx>& wave = *(std::vector<cplx>*) wavefunc;
+        PhysicalWorld1D& world = *(PhysicalWorld1D*) wd_p;
+        for(int i = 0; i < wave.size(); i++) {
+            double x = world.xgrid.get_pos(i);
+            wave[i] *= exp(IM * At * x);
+        }
     }
 }
