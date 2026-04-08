@@ -33,6 +33,8 @@ extern "C"
 
     DLL_EXPORT double get_accel_expect_1d(void * wd_p, void * wavefunc);
 
+    DLL_EXPORT double get_accel_expect_cross_1d(void * wd_p, void * wavefunc_free, void * wavefunc_bound);
+
     DLL_EXPORT double * project_out_bound_state_1d(void * wd_p, void * wavefunc, void * bound_state);
 
     DLL_EXPORT double * get_norm_1d(void * wd_p, void * wavefunc);
@@ -52,6 +54,12 @@ extern "C"
     DLL_EXPORT void superimpose_wave(void * wd_p, void * wavefunc, void * added_wave, double coeff_real, double coeff_imag);
 
     DLL_EXPORT void transform_to_length_gauge(void * wd_p, void * wavefunc, double At);
+    
+    DLL_EXPORT void reset_wave(void * wd_p, void * wavefunc);
+    
+    DLL_EXPORT void copy_wave_to(void * wd_p, void * to_wavefunc, void * from_wavefunc);
+
+    DLL_EXPORT double get_dU_data(void * wd_p, double x_pos);
 }
 
 

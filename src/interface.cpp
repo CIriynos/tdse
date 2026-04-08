@@ -78,6 +78,13 @@ extern "C"
         return (double)accel_expect.real();
     }
 
+    DLL_EXPORT
+    double get_accel_expect_cross_1d(void * world_p, void * wavefunc_free, void * wavefunc_bound)
+    {
+        cplx accel_expect = get_accel_expect_cross_1d(*(PhysicalWorld1D*)world_p, *(std::vector<cplx>*) wavefunc_free, *(std::vector<cplx>*) wavefunc_bound);
+        return (double)accel_expect.real();
+    }
+
     double * convert_cplx_to_array2(const cplx& num)
     {
         double * num_c_complex = new double[2];
@@ -168,5 +175,33 @@ extern "C"
             double x = world.xgrid.get_pos(i);
             wave[i] *= exp(IM * At * x);
         }
+    }
+
+    DLL_EXPORT
+    void reset_wave(void * wd_p, void * wavefunc)
+    {        
+        std::vector<cplx>& wave = *(std::vector<cplx>*) wavefunc;
+        for(int i = 0; i < wave.size(); i++) {
+            wave[i] = cplx(0.0, 0.0);
+        }
+    }
+
+    DLL_EXPORT
+    void copy_wave_to(void * wd_p, void * to_wavefunc, void * from_wavefunc)
+    {
+        std::vector<cplx>& to_wave = *(std::vector<cplx>*) to_wavefunc;
+        std::vector<cplx>& from_wave = *(std::vector<cplx>*) from_wavefunc;
+        to_wave = from_wave;
+    }
+
+    DLL_EXPORT
+    double get_dU_data(void * wd_p, double x_pos)
+    {
+        PhysicalWorld1D& world = *(PhysicalWorld1D*) wd_p;
+        int x_id = world.xgrid.index(x_pos);  // Check if x_pos is within the grid
+        if (x_id >= 0 && x_id < world.xgrid.N) {
+            return get_diff_2o(world.potential_data, x_id, world.xgrid.delta).real();
+        }
+        return 0.0;  // Out of bounds
     }
 }

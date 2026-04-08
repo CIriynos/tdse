@@ -25,6 +25,7 @@ lib.get_norm_1d.restype = POINTER(c_double)
 lib.get_pos_expect_1d.restype = c_double
 lib.get_pos_expect_1d_masked.restype = c_double
 lib.get_pos_expect_cross_1d.restype = c_double
+lib.get_accel_expect_cross_1d.restype = c_double
 lib.get_accel_expect_1d.restype = c_double
 lib.get_wave_value_1d.restype = POINTER(c_double)
 lib.get_wave_1diff_value_1d.restype = POINTER(c_double)
@@ -32,6 +33,9 @@ lib.project_out_bound_state_1d.restype = POINTER(c_double)
 lib.get_wave_copy.restype = c_void_p
 lib.get_empty_wave.restype = c_void_p
 lib.transform_to_length_gauge.restype = None
+lib.reset_wave.restype = None
+lib.copy_wave_to.restype = None
+lib.get_dU_data.restype = c_double
 
 def create_grid_data(N, delta, shift):
     return np.array([shift + delta * i for i in range(0, N)])
@@ -94,6 +98,10 @@ def get_pos_expect_cross_1d(world, wavefunc_free, wavefunc_bound):
     res = lib.get_pos_expect_cross_1d(c_void_p(world), c_void_p(wavefunc_free), c_void_p(wavefunc_bound))
     return res
 
+def get_accel_expect_cross_1d(world, wavefunc_free, wavefunc_bound):
+    res = lib.get_accel_expect_cross_1d(c_void_p(world), c_void_p(wavefunc_free), c_void_p(wavefunc_bound))
+    return res
+
 def project_out_bound_state_1d(world, wavefunc, bound_state):
     res = lib.project_out_bound_state_1d(c_void_p(world), c_void_p(wavefunc), c_void_p(bound_state))
     return res[0] + 1j * res[1]
@@ -135,6 +143,16 @@ def get_empty_wave(world):
 
 def transform_to_length_gauge(world, wavefunc, At):
     lib.transform_to_length_gauge(c_void_p(world), c_void_p(wavefunc), c_double(At))
+
+def reset_wave(world, wavefunc):
+    lib.reset_wave(c_void_p(world), c_void_p(wavefunc))
+
+def copy_wave_to(world, to, from_wave):
+    lib.copy_wave_to(c_void_p(world), c_void_p(to), c_void_p(from_wave))
+
+def get_dU_data(world, x_pos):
+    res = lib.get_dU_data(c_void_p(world), c_double(x_pos))
+    return res
 
 ###################################
 
@@ -340,7 +358,7 @@ def tdse_fd1d_hg_tsurf(world, buffer, wave, light_field, Xi, logging_interval=50
 
 
 
-def tdse_fd1d_hg_analytical(world, buffer, wave, light_field, Xi, bound_states, logging_interval=1000):
+def tdse_fd1d_hg_analytical(world, buffer, wave, light_field, Xi, bound_states, logging_interval=1000, dU_data=None):
     ts = light_field.get_ts()
     At_data = light_field.get_At_data()
     Et_data = light_field.get_Et_data()
@@ -354,19 +372,27 @@ def tdse_fd1d_hg_analytical(world, buffer, wave, light_field, Xi, bound_states, 
     pos_expect_data_free = np.zeros(len(ts))
     accel_expect_data_bound = np.zeros(len(ts))
     pos_expect_data_bound = np.zeros(len(ts))
-
     pos_expect_data_cross = np.zeros(len(ts))
-
+    accel_expect_data_cross = np.zeros(len(ts))
     bound_norm_data = np.zeros(len(ts))
 
+    sampling_num = 200
+    sampling_positions = np.linspace(-20, 20, num=sampling_num)
+    sampling_points_collect = [np.zeros(len(ts), dtype=complex) for _ in range(0, sampling_num)]
+    sampling_points_collect_bound = [np.zeros(len(ts), dtype=complex) for _ in range(0, sampling_num)]
+    sampling_points_collect_cross = [np.zeros(len(ts), dtype=complex) for _ in range(0, sampling_num)]
+    sampling_points_collect_free = [np.zeros(len(ts), dtype=complex) for _ in range(0, sampling_num)]
     mask_sigma = 20
+    dU_data = [get_dU_data(world, x) for x in sampling_positions]
 
     for (i, t) in enumerate(ts):
+
         tdse_laser_fd1d_onestep(buffer, wave, At=At_data[i])
 
         # project out bound states (not normalized)
-        bound_part_wave = get_empty_wave(world)
-        free_part_wave = get_wave_copy(world, wave)
+        reset_wave(world, bound_part_wave)
+        copy_wave_to(world, to=free_part_wave, from_wave=wave)
+
         transform_to_length_gauge(world, free_part_wave, At_data[i])
 
         accel_expect_data[i] = get_accel_expect_1d(world=world, wavefunc=free_part_wave) - Et_data[i] * get_norm_1d(world, wave)
@@ -390,8 +416,21 @@ def tdse_fd1d_hg_analytical(world, buffer, wave, light_field, Xi, bound_states, 
         pos_expect_data_bound[i] = get_pos_expect_1d_masked(world=world, wavefunc=bound_part_wave, mask_sigma=mask_sigma)
         # get cross term expectation
         pos_expect_data_cross[i] = get_pos_expect_cross_1d(world=world, wavefunc_free=free_part_wave, wavefunc_bound=bound_part_wave)
+        accel_expect_data_cross[i] = get_accel_expect_cross_1d(world=world, wavefunc_free=free_part_wave, wavefunc_bound=bound_part_wave)
 
-        bound_norm_data[i] = np.real(get_norm_1d(world, bound_part_wave))
+        # collect sampling points
+        # # pos
+        # for (j, x_pos) in enumerate(sampling_positions):
+        #     sampling_points_collect[j][i] = get_wave_value_1d(world, wave, x_pos) * x_pos * np.conjugate(get_wave_value_1d(world, wave, x_pos))
+        #     sampling_points_collect_bound[j][i] = get_wave_value_1d(world, bound_part_wave, x_pos) * x_pos * np.conjugate(get_wave_value_1d(world, bound_part_wave, x_pos))
+        #     sampling_points_collect_free[j][i] = get_wave_value_1d(world, free_part_wave, x_pos) * x_pos * np.conjugate(get_wave_value_1d(world, free_part_wave, x_pos))
+        #     sampling_points_collect_cross[j][i] = get_wave_value_1d(world, free_part_wave, x_pos) * np.conjugate(get_wave_value_1d(world, bound_part_wave, x_pos)) * x_pos + get_wave_value_1d(world, bound_part_wave, x_pos) * np.conjugate(get_wave_value_1d(world, free_part_wave, x_pos)) * x_pos
+        # accel
+        for (j, x_pos) in enumerate(sampling_positions):
+            sampling_points_collect[j][i] = get_wave_value_1d(world, wave, x_pos) * dU_data[j] * np.conjugate(get_wave_value_1d(world, wave, x_pos))
+            sampling_points_collect_bound[j][i] = get_wave_value_1d(world, bound_part_wave, x_pos) * dU_data[j] * np.conjugate(get_wave_value_1d(world, bound_part_wave, x_pos))
+            sampling_points_collect_free[j][i] = get_wave_value_1d(world, free_part_wave, x_pos) * dU_data[j] * np.conjugate(get_wave_value_1d(world, free_part_wave, x_pos))
+            sampling_points_collect_cross[j][i] = get_wave_value_1d(world, free_part_wave, x_pos) * np.conjugate(get_wave_value_1d(world, bound_part_wave, x_pos)) * dU_data[j] + get_wave_value_1d(world, bound_part_wave, x_pos) * np.conjugate(get_wave_value_1d(world, free_part_wave, x_pos)) * dU_data[j]
 
         # logging
         if i % logging_interval == 0:
@@ -399,7 +438,10 @@ def tdse_fd1d_hg_analytical(world, buffer, wave, light_field, Xi, bound_states, 
             norm = get_norm_1d(world, wave)
             print(f"[TDSE-fd1d] energy = {energy}, norm = {norm}, free part norm = {free_part_wave_norm}, bound part norm = {bound_part_wave_norm}")
 
-    return [accel_expect_data, pos_expect_data, accel_expect_data_free, pos_expect_data_free, accel_expect_data_bound, pos_expect_data_bound, pos_expect_data_cross, bound_norm_data]
+    return [accel_expect_data, pos_expect_data, accel_expect_data_free, \
+        pos_expect_data_free, accel_expect_data_bound, pos_expect_data_bound, \
+        pos_expect_data_cross, accel_expect_data_cross, \
+        sampling_points_collect, sampling_points_collect_bound, sampling_points_collect_free, sampling_points_collect_cross, sampling_positions]
 
 
 def tsurf_1d(tsurf_res, light_field, k_min, k_max, Xi, sampling_num=500):

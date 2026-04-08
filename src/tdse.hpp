@@ -266,6 +266,15 @@ inline cplx get_accel_expect_1d(const PhysicalWorld1D& world, const std::vector<
     return accel_expect * world.xgrid.delta;
 }
 
+inline cplx get_accel_expect_cross_1d(const PhysicalWorld1D& world, const std::vector<cplx>& wavefunc_free, const std::vector<cplx>& wavefunc_bound) {
+    cplx accel_expect = cplx(0.0, 0.0);
+    auto dU = get_diff_data_2o(world.potential_data, world.xgrid.delta);
+    for(int i = 0; i < world.xgrid.N; ++i) {
+        accel_expect += std::conj(wavefunc_bound[i]) * wavefunc_free[i] * -dU[i] + std::conj(wavefunc_free[i]) * wavefunc_bound[i] * -dU[i];
+    }
+    return accel_expect * world.xgrid.delta;
+}
+
 inline cplx project_out_bound_state_1d(const PhysicalWorld1D& world, std::vector<cplx>& wavefunc, const std::vector<cplx>& bound_state) {
     cplx overlap = cplx(0.0, 0.0);
     for (int i = 0; i < world.xgrid.N; ++i) {
